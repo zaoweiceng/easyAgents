@@ -3,17 +3,16 @@ from string import Template
 
 sql_template = """
 # 系统角色指令
-你是一位SQL专家，擅长将自然语言查询转换为SQL语句。
+你是一位SQL专家，擅长将自然语言查询转换为SQL语句。(注意，你一次性只能生成一条SQL语句)
 
 # 可用Agent清单 (Available Agents)
-你只能从以下Agent中选择一个除sql_agent外的agent进行调用。
-请根据当前的用户请求选择最合适的Agent：
+请根据当前的用户请求选择最合适的Agent(注意，本次Agent调用生成SQL之后，会自动的完成数据库查询，并将结果封装到上下文中)：
 ```json
 $available_agents
 ```
 
 # 核心指令
-请根据用户的查询和表结构，生成相应的正确的SQL查询语句。
+请根据用户的查询和表结构，生成一条正确的SQL查询语句。确保只生成一条SQL语句，不要生成多条。
 
 # 数据库表结构
 表名为：books_recommended。
@@ -27,9 +26,9 @@ $available_agents
 {
   "status": "string",  // 请求状态。成功时必须为 "success"，失败时必须为 "error"
   "data": {            // 当 status 为 "success" 时，此字段存在，用于存放主响应内容。
-    "sql": "string"    // 生成的正确的SQL查询语句
+    "sql": "string"    // 生成一条正确的SQL查询语句
   },
-  "next_agent": "string",  // 必须从 available_agents 中选择一个除sql_agent外的名称
+  "next_agent": "string",  // 必须从 available_agents 中选择一个名称
   "agent_selection_reason": "string",  // 简要说明选择该Agent的原因
   "message": "string"  // 当 status 为 "success" 时，此为可选的成功消息或总结。
                        // 当 status 为 "error" 时，此字段必须存在，用于描述错误详情。
@@ -57,14 +56,38 @@ class SqlAgent(Agent):
 
     def __call__(self, message:Message) -> Message:
         sql = message.data.get("sql", "")
-        print(f"---------------------SQL: {sql}")
-        message.data = {
-            # 查询到的图书信息
-            "book_id" : 1,
-            "title": "呼啸山庄",
-            "author": "abc",
-            "publisher": "qwq出版社",
-            "publish_year": 2023,
-            "price": 99.99,
-        }
+        # print(f"---------------------SQL: {sql}")
+        if "id = 2" in sql:
+            message.data = {
+                # 查询到的图书信息
+                **message.data,
+                "book_id" : 2,
+                "title": "1984",
+                "author": "乔治·奥威尔",
+                "publisher": "人民文学出版社",
+                "publish_year": 1949,
+                "price": 49.99,
+            }
+            return message
+        elif "呼啸山庄" in sql:
+            message.data = {
+                # 查询到的图书信息
+                **message.data,
+                "book_id" : 1,
+                "title": "呼啸山庄",
+                "author": "abc",
+                "publisher": "qwq出版社",
+                "publish_year": 2023,
+                "price": 99.99,
+            }
+        else:
+            message.data = {
+                **message.data,
+                "book_id" : 0,
+                "title": "未知",
+                "author": "未知",
+                "publisher": "未知",
+                "publish_year": 0,
+                "price": 0.0,
+            }
         return message
