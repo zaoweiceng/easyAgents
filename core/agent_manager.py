@@ -58,16 +58,22 @@ class AgentManager:
         while res is None or agent_name != "none":
             try:
                 res = self.conversation(user_message=str(context), agent_name=agent_name)
-                print(res)
+                # print(res)
             except Exception as e:
                 logger.error(f"调用 Agent '{agent_name}' 失败: {e}")
                 max_trys -= 1
                 if max_trys <= 0:
-                    return f"调用 Agent '{agent_name}' 多次失败，终止处理。错误信息: {e}"
+                    context.append(
+                        {"role": "system", "content": {"answer": f"Agent '{agent_name}' 处理失败，错误信息: {res.message}"}, "message": res.message}
+                    )
+                    return context
                 continue
             if res.status != "success":
                 logger.error(f"Agent '{agent_name}' 返回错误状态: {res.message}")
-                return res.message
+                context.append(
+                    {"role": "system", "content": {"answer": f"Agent '{agent_name}' 处理失败，错误信息: {res.message}"}, "message": res.message}
+                )
+                return context
             query = res.data
             context.append(
                 {
