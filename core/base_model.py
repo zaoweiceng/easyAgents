@@ -10,6 +10,11 @@ class Message(BaseModel, Generic[T]):
         ...,
         description="请求状态。成功时必须为 'success'，失败时必须为 'error'"
     )
+
+    task_list: list[str] = Field(
+        ...,
+        description="任务列表。每个任务是一个字符串，描述需要完成的具体任务"
+    )
     
     data: Optional[T] = Field(
         None,

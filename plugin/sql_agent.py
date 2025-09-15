@@ -3,7 +3,8 @@ from string import Template
 
 sql_template = """
 # 系统角色指令
-你是一位SQL专家，擅长将自然语言查询转换为SQL语句。(注意，你一次性只能生成一条SQL语句)
+你是一位SQL专家，擅长将自然语言查询转换为SQL语句。
+(注意，你一次性只能从task_list中选择一个任务来完成， 完成后需要将该任务从task_list中移除， 然后再选择下一个任务交给合适的agent来完成)
 
 # 可用Agent清单 (Available Agents)
 请根据当前的用户请求选择最合适的Agent。
@@ -17,84 +18,19 @@ $available_agents
 请根据用户的查询和表结构，生成一条正确的SQL查询语句。确保只生成一条SQL语句，不要生成多条。
 
 # 数据库表结构
-表名为：data。
+表名为：books_recommended。
 
 # 表字段
 表字段为如下:
-{
-  [
-    {
-      "name": "title",
-      "meaning": "书名"
-    },
-    {
-      "name": "author",
-      "meaning": "作者"
-    },
-    {
-      "name": "isbn",
-      "meaning": "国际标准书号"
-    },
-    {
-      "name": "publisher",
-      "meaning": "出版社"
-    },
-    {
-      "name": "original_name",
-      "meaning": "原书名"
-    },
-    {
-      "name": "subtitle",
-      "meaning": "副标题"
-    },
-    {
-      "name": "translator",
-      "meaning": "译者"
-    },
-    {
-      "name": "publication_date",
-      "meaning": "出版日期"
-    },
-    {
-      "name": "no_of_pages",
-      "meaning": "页数"
-    },
-    {
-      "name": "cover",
-      "meaning": "封面类型"
-    },
-    {
-      "name": "collection",
-      "meaning": "系列或丛书"
-    },
-    {
-      "name": "users_rating",
-      "meaning": "用户评分"
-    },
-    {
-      "name": "description",
-      "meaning": "书籍简介"
-    },
-    {
-      "name": "author_description",
-      "meaning": "作者简介"
-    },
-    {
-      "name": "price",
-      "meaning": "书籍价格"
-    },
-    {
-      "name": "tags",
-      "meaning": "标签"
-    },
-  ]
-}
+表字段为：[{"id": "INT UNSIGNED AUTO_INCREMENT PRIMARY KEY", "description": "唯一标识符"}, {"title": "VARCHAR(255) NOT NULL", "description": "书名"}, {"author": "VARCHAR(150) NOT NULL", "description": "作者"}, {"isbn": "CHAR(13) UNIQUE NOT NULL", "description": "定长ISBN"}, {"publisher": "VARCHAR(100) NOT NULL", "description": "出版社"}, {"publish_date": "DATE", "description": "出版日期"}, {"price": "DECIMAL(8,2) UNSIGNED", "description": "价格"}, {"page_count": "SMALLINT UNSIGNED", "description": "页数"}, {"category": "VARCHAR(50) NOT NULL", "description": "分类"}, {"language": "CHAR(2) DEFAULT 'CN'", "description": "语言代码(ISO标准)"}, {"desc": "TEXT", "description": "图书描述"}, {"stock": "INT UNSIGNED DEFAULT 0", "description": "库存数量"}, {"created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP", "description": "创建时间"}, {"updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "description": "更新时间"}]。
+
 
 # JSON 响应格式规范
 你的输出必须是且仅是一个JSON对象：
 
 {
   "status": "string",  // 请求状态。成功时必须为 "success"，失败时必须为 "error"
+  "task_list": [],      // 任务列表。每个任务是一个字符串，描述需要完成的具体任务，你完成自己的任务之后，需要将自己的任务从任务列表中移除。
   "data": {            // 当 status 为 "success" 时，此字段存在，用于存放主响应内容。
     "sql": "string"    // 生成一条正确的SQL查询语句
   },
@@ -132,7 +68,7 @@ class SqlAgent(Agent):
                 # 查询到的图书信息
                 **message.data,
                 "result":{
-                    "book_id" : 2,
+                    "id" : 2,
                     "title": "1984",
                     "author": "乔治·奥威尔",
                     "publisher": "人民文学出版社",
@@ -141,12 +77,12 @@ class SqlAgent(Agent):
                 }
             }
             return message
-        elif "呼啸山庄" in sql:
+        elif "呼啸山庄" in sql or 'abc' in sql:
             message.data = {
                 # 查询到的图书信息
                 **message.data,
                 "result":{
-                    "book_id" : 1,
+                    "id" : 1,
                     "title": "呼啸山庄",
                     "author": "abc",
                     "publisher": "qwq出版社",

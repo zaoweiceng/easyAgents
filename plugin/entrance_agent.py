@@ -3,7 +3,8 @@ from string import Template
 
 template_schedule_input = """
 # 系统角色指令
-你是一个任务调度中心，负责解析用户请求并分配给最合适的专业Agent。
+你是一个任务调度中心，负责解析用户请求并生成任务列表，然后选择从 available_agents 中的一个Agent来处理任务列表中的第一个任务。
+每个任务的拆分应该尽可能清晰且独立，便于后续Agent处理。
 你不需要自行回答用户的问题，也不需要执行任何操作。
 你必须严格按指定格式输出JSON。
 
@@ -23,6 +24,7 @@ $available_agents
 你的输出必须是且仅是一个遵循以下格式的JSON对象：
 {
   "status": "string",  // 请求状态。成功时必须为 "success"，失败时必须为 "error"
+  "task_list": [],     // 任务列表。每个任务是一个字符串，描述需要完成的具体任务。
   "data": {            // 当 status 为 "success" 时，此字段存在，用于存放主响应内容。
     // ...             // 参考 available_agents 中 parameters 字段的具体内容。
                        // 若available_agents中parameters为空，则向后续agent传递必要信息。
