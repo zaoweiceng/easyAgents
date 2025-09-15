@@ -1,6 +1,7 @@
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
-from enum import Enum
+from .base_model import Message
+from .prompt.template_model import PromptTemplate
 
 class Agent(BaseModel):
     """Agent 定义类"""
@@ -39,6 +40,23 @@ class Agent(BaseModel):
         default="1.0.0",
         description="Agent 版本号",
     )
+
+    prompt_template: PromptTemplate = Field(
+        default=None,
+        description="Agent 的提示词模板",
+    )
+    
+    def get_prompt(self) -> PromptTemplate:
+        """获取 Agent 的提示词模板"""
+        return self.prompt_template
+    
+    def run(self, message: Message) -> Message:
+        """执行 Agent 的主要逻辑, 如果不需要对数据进行额外处理，可以直接返回传入的 message"""
+        raise NotImplementedError("子类必须实现 run 方法，如果不需要对数据进行额外处理，可以直接返回传入的 message")
+
+    def __call__(self, message: Message) -> Message:
+        """处理传入的消息并返回响应"""
+        return self.run(message)
 
 class AgentLoader:
     """Agent 加载器类"""

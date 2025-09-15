@@ -25,8 +25,6 @@ if __name__ == "__main__":
                         base_url=base_url, 
                         api_key=api_key, 
                         model_name=model_name,
-                        start_agent_name=start_agent_name,
-                        end_agent_name=end_agent_name
                     )
     response = agent_manager("abc写了一本书，帮我查询一下这本书的出版信息")
     # response = agent_manager("圆周率精确到3位小数是多少？")

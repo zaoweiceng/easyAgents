@@ -1,21 +1,13 @@
-from core import Agent, Message
-from string import Template
+from core import Agent, Message, PromptTemplate
 
-sql_template = """
-# 系统角色指令
+system_instructions = \
+"""
 你是一位SQL专家，擅长将自然语言查询转换为SQL语句。
-(注意，你一次性只能从task_list中选择一个任务来完成， 完成后需要将该任务从task_list中移除， 然后再选择下一个任务交给合适的agent来完成)
-
-# 可用Agent清单 (Available Agents)
-请根据当前的用户请求选择最合适的Agent。
-你的任务是生成SQL语句，你在选择下一个Agent时，必须默认已经按照你给出的SQL查询到了需要的结果。
-(注意，本次Agent调用生成SQL之后，会自动的完成数据库查询，并将结果封装到对话上下文中，如果接下来不需要生成SQL，请选择其它Agent)
-```json
-$available_agents
-```
-
-# 核心指令
+"""
+core_instructions = \
+"""
 请根据用户的查询和表结构，生成一条正确的SQL查询语句。确保只生成一条SQL语句，不要生成多条。
+你的任务是生成SQL语句，你在选择下一个Agent时，必须默认已经按照你给出的SQL查询到了需要的结果。
 
 # 数据库表结构
 表名为：books_recommended。
@@ -23,23 +15,11 @@ $available_agents
 # 表字段
 表字段为如下:
 表字段为：[{"id": "INT UNSIGNED AUTO_INCREMENT PRIMARY KEY", "description": "唯一标识符"}, {"title": "VARCHAR(255) NOT NULL", "description": "书名"}, {"author": "VARCHAR(150) NOT NULL", "description": "作者"}, {"isbn": "CHAR(13) UNIQUE NOT NULL", "description": "定长ISBN"}, {"publisher": "VARCHAR(100) NOT NULL", "description": "出版社"}, {"publish_date": "DATE", "description": "出版日期"}, {"price": "DECIMAL(8,2) UNSIGNED", "description": "价格"}, {"page_count": "SMALLINT UNSIGNED", "description": "页数"}, {"category": "VARCHAR(50) NOT NULL", "description": "分类"}, {"language": "CHAR(2) DEFAULT 'CN'", "description": "语言代码(ISO标准)"}, {"desc": "TEXT", "description": "图书描述"}, {"stock": "INT UNSIGNED DEFAULT 0", "description": "库存数量"}, {"created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP", "description": "创建时间"}, {"updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP", "description": "更新时间"}]。
+"""
 
-
-# JSON 响应格式规范
-你的输出必须是且仅是一个JSON对象：
-
-{
-  "status": "string",  // 请求状态。成功时必须为 "success"，失败时必须为 "error"
-  "task_list": [],      // 任务列表。每个任务是一个字符串，描述需要完成的具体任务，你完成自己的任务之后，需要将自己的任务从任务列表中移除。
-  "data": {            // 当 status 为 "success" 时，此字段存在，用于存放主响应内容。
-    "sql": "string"    // 生成一条正确的SQL查询语句
-  },
-  "next_agent": "string",  // 必须从 available_agents 中选择一个名称
-  "agent_selection_reason": "string",  // 简要说明选择该Agent的原因
-  "message": "string"  // 当 status 为 "success" 时，此为可选的成功消息或总结。
-                       // 当 status 为 "error" 时，此字段必须存在，用于描述错误详情。
-                       // message 使用中文进行描述
-}
+data_fields = \
+"""
+"sql": "string"    // 生成一条正确的SQL查询语句
 """
 
 class SqlAgent(Agent):
@@ -52,15 +32,14 @@ class SqlAgent(Agent):
                 "demand": "用户的查询需求",
             }
         )
-        self.is_active = True
-    
-    def get_prompt(self, available_agents) -> str:
-        __template_sql_input = Template(sql_template)
-        return __template_sql_input.substitute(
-            available_agents=available_agents
+        self.prompt_template = PromptTemplate(
+            system_instructions=system_instructions,
+            available_agents=None,
+            core_instructions=core_instructions,
+            data_fields=data_fields
         )
 
-    def __call__(self, message:Message) -> Message:
+    def run(self, message:Message) -> Message:
         sql = message.data.get("sql", "")
         # print(f"---------------------SQL: {sql}")
         if "id = 2" in sql:
