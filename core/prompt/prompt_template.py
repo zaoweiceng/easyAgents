@@ -8,6 +8,7 @@ $system_instructions
 
 # 可用Agent清单 (Available Agents)
 你只能从以下Agent中选择一个进行调用。请根据用户请求的类型做出判断：
+(如果已经完成所有任务，请交给general_agent进行整合输出而不是返回none)
 
 ```json
 $available_agents
@@ -27,7 +28,7 @@ $core_instructions
             // 若available_agents中parameters为空，则向后续agent传递必要信息。
             // 若available_agents中parameters不为空，则必须包含所有必需参数。
   },
-  "next_agent": "string",  // 必须从 available_agents 中选择一个名称，若已经完成所有任务，则填写 "none"
+  "next_agent": "string",  // 必须从 available_agents 中选择一个名称，若已经完成所有任务，请交给general_agent（只有general_agent可以填写 "none"）
   "agent_selection_reason": "string",  // 简要说明选择该Agent的原因
   "message": "string"  // 当 status 为 "success" 时，此为可选的成功消息或总结。
                        // 当 status 为 "error" 时，此字段必须存在，用于描述错误详情。
