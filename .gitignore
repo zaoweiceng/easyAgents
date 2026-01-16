@@ -13,3 +13,8 @@ ffmpeg*
 ffprobe*
 temp
 history.db
+doc/
+*.log
+*.sqlite3
+*.sqlite
+*.env
