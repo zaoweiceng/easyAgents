@@ -48,11 +48,18 @@ export const useChat = (initialSessionId = null) => {
 
       // 处理响应
       const responseMessages = response.response || [];
-      const formattedMessages = responseMessages.map((msg) => ({
-        role: msg.role,
-        content: msg.content || msg.message || '',
-        data: msg.data,
-      }));
+      const formattedMessages = responseMessages.map((msg) => {
+        // 如果消息包含 form_config，不显示 content（因为它是 JSON 格式）
+        const hasFormConfig = msg.data && msg.data.form_config;
+
+        return {
+          role: msg.role,
+          content: hasFormConfig ? '' : (msg.content || msg.message || ''),
+          data: msg.data,
+          thinkingSteps: [],
+          isThinkingComplete: true
+        };
+      });
 
       setMessages((prev) => [...prev, ...formattedMessages]);
     } catch (err) {
@@ -230,9 +237,20 @@ export const useChat = (initialSessionId = null) => {
                   lastStep.task = message.task_list[0];
                 }
 
-                // 更新消息的thinkingSteps
+                // 更新消息的thinkingSteps 和 data
                 if (currentMessageRef.current) {
                   currentMessageRef.current.thinkingSteps = [...thinkingStepsRef.current];
+
+                  // 处理包含 form_config 的消息
+                  const hasFormConfig = message.data && message.data.form_config;
+                  if (hasFormConfig) {
+                    // 如果包含表单，清空 content（避免显示 JSON），设置 data
+                    currentMessageRef.current.content = '';
+                    currentMessageRef.current.data = message.data;
+                  } else if (message.data && message.data.answer) {
+                    // 如果是最终答案，提取并显示
+                    currentMessageRef.current.data = message.data;
+                  }
 
                   flushSync(() => {
                     setMessages((prev) => [...prev]);
@@ -294,9 +312,13 @@ export const useChat = (initialSessionId = null) => {
       const formattedMessages = conversationData.messages.map((msg) => {
         let content = msg.content;
         let thinkingSteps = [];
+        let data = msg.data;
 
-        // 如果是assistant消息，尝试解析JSON并提取answer
-        if (msg.role === 'assistant' && content) {
+        // 检查是否包含 form_config
+        const hasFormConfig = data && data.form_config;
+
+        // 如果是assistant消息且没有 form_config，尝试解析JSON并提取answer
+        if (msg.role === 'assistant' && content && !hasFormConfig) {
           try {
             // 尝试找到所有JSON对象（可能包含多个）
             const jsonMatches = content.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g) || [];
@@ -311,10 +333,13 @@ export const useChat = (initialSessionId = null) => {
                 }
               }).filter(obj => obj !== null);
 
-              // 从最后一个JSON对象（通常是general_agent的响应）提取answer
-              const lastJson = jsonObjects[jsonObjects.length - 1];
-              if (lastJson && lastJson.data && lastJson.data.answer) {
-                content = lastJson.data.answer;
+              // 从后往前找第一个有answer且没有form_config的JSON
+              for (let i = jsonObjects.length - 1; i >= 0; i--) {
+                const jsonObj = jsonObjects[i];
+                if (jsonObj.data && jsonObj.data.answer && !jsonObj.data.form_config) {
+                  content = jsonObj.data.answer;
+                  break;
+                }
               }
 
               // 从所有JSON对象构建thinkingSteps
@@ -341,10 +366,15 @@ export const useChat = (initialSessionId = null) => {
           }
         }
 
+        // 如果包含 form_config，清空 content（避免显示 JSON）
+        if (hasFormConfig) {
+          content = '';
+        }
+
         return {
           role: msg.role,
           content: content,
-          data: msg.data,
+          data: data,
           events: msg.events,
           thinkingSteps: thinkingSteps,
           isThinkingComplete: true, // 历史消息总是完成状态

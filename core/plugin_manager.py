@@ -5,7 +5,7 @@ from typing import Dict, List, Any
 from .agent import AgentLoader, Agent
 from .constants import app_name
 from .agent_loader_util import load_class_from_file, filename_to_classname
-from .agents import EntranceAgent, GeneralAgent   # 导入所有内置 Agent
+from .agents import EntranceAgent, GeneralAgent, DemandAgent   # 导入所有内置 Agent
 from .agents.mcp_agent import MCPAgent, MultiMCPAgent
 
 logger = logging.getLogger(app_name)
@@ -39,6 +39,7 @@ class pluginManager:
         # 添加内置Agent
         self.agent_loader.add_agent(EntranceAgent())
         self.agent_loader.add_agent(GeneralAgent())
+        self.agent_loader.add_agent(DemandAgent())
 
         # 加载MCP Agent
         if self.mcp_configs:

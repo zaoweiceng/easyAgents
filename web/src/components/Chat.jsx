@@ -8,6 +8,7 @@ import { SettingsModal } from './SettingsModal';
 import { AgentModal } from './AgentModal';
 import { ThinkingProcess } from './ThinkingProcess';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { FormComponent } from './FormComponent';
 import './Chat.css';
 
 export const Chat = ({
@@ -125,6 +126,26 @@ export const Chat = ({
                 <ThinkingProcess
                   steps={msg.thinkingSteps}
                   isProcessing={!msg.isThinkingComplete && isLoading}
+                />
+              )}
+
+              {/* Form Component - 如果消息包含表单配置 */}
+              {msg.data && msg.data.form_config && (
+                <FormComponent
+                  formConfig={msg.data.form_config}
+                  onSubmit={async (formData) => {
+                    // 提交表单数据
+                    const query = JSON.stringify({
+                      type: 'form_submission',
+                      form_values: formData,
+                      original_demand: msg.data.user_demand || ''
+                    });
+                    if (settings.chatMode === 'sync') {
+                      await sendSyncMessage(query);
+                    } else {
+                      await sendStreamMessage(query);
+                    }
+                  }}
                 />
               )}
 

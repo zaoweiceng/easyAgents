@@ -132,16 +132,20 @@ class ContextManager:
             json_matches = re.findall(json_pattern, content.replace('\n', ''))
 
             if json_matches:
-                # 取最后一个JSON（general_agent的响应）
-                last_json = json_matches[-1]
-                data = json.loads(last_json)
-                data_field = data.get('data')
-                if data_field:
-                    # 处理dict和对象两种情况
-                    if isinstance(data_field, dict) and data_field.get('answer'):
-                        return data_field['answer']
-                    elif hasattr(data_field, 'answer') and data_field.answer:
-                        return data_field.answer
+                # 从后往前找第一个有answer且没有form_config的JSON（general_agent的最终响应）
+                for last_json in reversed(json_matches):
+                    data = json.loads(last_json)
+                    data_field = data.get('data')
+                    if data_field:
+                        # 跳过包含form_config的消息（表单请求不算最终答案）
+                        if isinstance(data_field, dict) and data_field.get('form_config'):
+                            continue
+
+                        # 处理dict和对象两种情况
+                        if isinstance(data_field, dict) and data_field.get('answer'):
+                            return data_field['answer']
+                        elif hasattr(data_field, 'answer') and data_field.answer:
+                            return data_field.answer
         except Exception as e:
             logger.debug(f"提取final_answer失败: {e}")
 
