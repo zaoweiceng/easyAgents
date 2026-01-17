@@ -1,0 +1,118 @@
+{
+  "mcp_servers": [
+    {
+      "name": "filesystem_local",
+      "description": "本地文件系统访问",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/directory"],
+      "env": {},
+      "health_check": true
+    },
+    {
+      "name": "filesystem_remote",
+      "description": "远端文件系统服务器（SSE）",
+      "url": "http://localhost:3000/mcp",
+      "headers": {
+        "Authorization": "Bearer your-token"
+      },
+      "health_check": true
+    },
+    {
+      "name": "github",
+      "description": "GitHub集成",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "your-github-token"
+      },
+      "health_check": true
+    },
+    {
+      "name": "github_remote",
+      "description": "远端GitHub服务器",
+      "url": "https://your-mcp-server.com/github",
+      "headers": {
+        "Authorization": "Bearer your-token",
+        "X-API-Key": "your-api-key"
+      },
+      "health_check": true
+    },
+    {
+      "name": "postgres",
+      "description": "PostgreSQL数据库",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:password@localhost:5432/dbname"],
+      "env": {},
+      "health_check": true
+    },
+    {
+      "name": "postgres_remote",
+      "description": "远端PostgreSQL服务器",
+      "url": "https://your-mcp-server.com/postgres",
+      "headers": {},
+      "health_check": true
+    },
+    {
+      "name": "brave-search",
+      "description": "Brave搜索",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "your-brave-api-key"
+      },
+      "health_check": true
+    },
+    {
+      "name": "memory",
+      "description": "内存服务器",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "env": {},
+      "health_check": true
+    },
+    {
+      "name": "custom-python-server",
+      "description": "自定义Python MCP服务器",
+      "command": "python",
+      "args": ["custom_mcp_server.py"],
+      "env": {
+        "CUSTOM_ENV": "value"
+      },
+      "health_check": true
+    },
+    {
+      "name": "custom-node-server",
+      "description": "自定义Node.js MCP服务器",
+      "command": "node",
+      "args": ["custom-server.js"],
+      "env": {},
+      "health_check": true
+    }
+  ],
+  "说明": {
+    "配置项": {
+      "name": "服务器名称（必需）",
+      "command": "启动命令（stdio模式，与url二选一）",
+      "url": "远端服务器URL（sse模式，与command二选一）",
+      "args": "命令参数列表（可选）",
+      "env": "环境变量字典（可选）",
+      "headers": "HTTP请求头（仅sse模式，可选）",
+      "health_check": "是否进行健康检查（默认true）",
+      "description": "描述（可选）"
+    },
+    "传输类型": {
+      "stdio": "本地进程通信，使用command+args+env",
+      "sse": "远端HTTP通信，使用url+headers"
+    },
+    "健康检查": {
+      "作用": "在加载时检测服务器是否可用",
+      "失败行为": "如果检查失败，Agent的is_active将设为false",
+      "禁用方法": "设置health_check为false"
+    },
+    "示例": {
+      "本地stdio": "使用command+args启动本地进程",
+      "远端sse": "使用url连接远端HTTP服务器",
+      "混合使用": "可以同时配置stdio和sse服务器"
+    }
+  }
+}

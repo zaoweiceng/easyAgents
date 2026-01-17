@@ -10,13 +10,25 @@ logger.setLevel(logging.WARNING)
 
 
 class AgentManager:
-    def __init__(self, plugin_src: str, 
-                 base_url: str, 
-                 api_key: str, 
-                 model_name: str
+    def __init__(self, plugin_src: str,
+                 base_url: str,
+                 api_key: str,
+                 model_name: str,
+                 mcp_configs: list = None
                  ):
+        """
+        初始化Agent管理器
+
+        Args:
+            plugin_src: 插件目录路径
+            base_url: LLM服务地址
+            api_key: LLM API密钥
+            model_name: 模型名称
+            mcp_configs: MCP服务器配置列表（可选）
+        """
         self.plugin_src = plugin_src
-        self.agents = pluginManager(src=self.plugin_src)
+        self.mcp_configs = mcp_configs
+        self.agents = pluginManager(src=self.plugin_src, mcp_configs=mcp_configs)
         self.llm = openai.OpenAI(
             base_url=base_url,
             api_key=api_key

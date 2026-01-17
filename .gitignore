@@ -1,20 +1,82 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
-.vscode
-__pycache__
-*.pyc
-env
-runtime
-.idea
-output
-logs
-TEMP
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.production
+config.local.py
+
+# Logs
+logs/
+*.log
+*.log.*
+logging/
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Project specific
+runtime/
+output/
+TEMP/
+temp/
 weight.json
 ffmpeg*
 ffprobe*
-temp
 history.db
 doc/
-*.log
-*.sqlite3
-*.sqlite
-*.env
+
+# MCP
+mcp_config.json  # 包含敏感信息的MCP配置
+
+test/
