@@ -106,24 +106,70 @@ export const useChat = (initialSessionId = null) => {
                 // 累积原始JSON内容
                 rawContentRef.current += data.content;
 
-                // 尝试解析JSON并提取answer字段
+                // 尝试从累积的内容中提取answer字段
                 try {
-                  const jsonMatch = rawContentRef.current.match(/\{[\s\S]*\}/);
-                  if (jsonMatch) {
-                    const parsed = JSON.parse(jsonMatch[0]);
-                    if (parsed.data && parsed.data.answer) {
-                      // 提取answer字段作为显示内容
-                      currentMessageRef.current.content = parsed.data.answer;
+                  const content = rawContentRef.current;
 
-                      // 使用flushSync确保立即更新UI
-                      flushSync(() => {
-                        setMessages((prev) => [...prev]);
-                      });
+                  // 查找 "answer": 后面的内容
+                  const answerKeyIndex = content.indexOf('"answer"');
+                  if (answerKeyIndex !== -1) {
+                    // 找到 "answer": 后面的冒号
+                    const colonIndex = content.indexOf(':', answerKeyIndex);
+                    if (colonIndex !== -1) {
+                      // 找到answer值的开始引号
+                      const firstQuoteIndex = content.indexOf('"', colonIndex);
+                      if (firstQuoteIndex !== -1) {
+                        // 从第一个引号后开始，提取内容直到遇到未转义的引号
+                        let answerText = '';
+                        let i = firstQuoteIndex + 1;
+                        let inEscape = false;
+
+                        while (i < content.length) {
+                          const char = content[i];
+
+                          if (inEscape) {
+                            // 处理转义字符
+                            if (char === 'n') {
+                              answerText += '\n';
+                            } else if (char === 't') {
+                              answerText += '\t';
+                            } else if (char === 'r') {
+                              answerText += '\r';
+                            } else if (char === '\\') {
+                              answerText += '\\';
+                            } else if (char === '"') {
+                              answerText += '"';
+                            } else {
+                              answerText += char;
+                            }
+                            inEscape = false;
+                          } else if (char === '\\') {
+                            // 遇到转义符号
+                            inEscape = true;
+                          } else if (char === '"') {
+                            // 遇到结束引号
+                            break;
+                          } else {
+                            // 普通字符
+                            answerText += char;
+                          }
+                          i++;
+                        }
+
+                        // 如果提取到了内容，更新显示
+                        if (answerText || currentMessageRef.current.content) {
+                          currentMessageRef.current.content = answerText;
+
+                          flushSync(() => {
+                            setMessages((prev) => [...prev]);
+                          });
+                        }
+                      }
                     }
                   }
                 } catch (e) {
-                  // JSON还没完整，继续累积
-                  // 暂时显示原始内容（可选）
+                  // 解析失败，继续累积
+                  console.debug('JSON解析中...', e.message);
                 }
               }
               // 如果不是最终输出，忽略（这是思考过程，不显示）
