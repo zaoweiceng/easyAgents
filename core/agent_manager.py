@@ -5,7 +5,7 @@ from .agent import normalize_agent_output
 import openai
 import json
 import logging
-from typing import Generator, Dict, Any, Union
+from typing import Generator, Dict, Any, Union, List
 from datetime import datetime
 import time
 
@@ -42,29 +42,62 @@ class AgentManager:
         self.end_agent = end_agent_name
         self.max_trys = 3
 
-    def __call__(self, query: str, stream: bool = False) -> Union[list, Generator[Dict[str, Any], None, None]]:
+    def __call__(self, query: str, stream: bool = False, session_id: str = None, context_manager=None) -> Union[list, Generator[Dict[str, Any], None, None]]:
         """
         处理用户查询
 
         Args:
             query: 用户查询文本
             stream: 是否启用流式响应（默认False）
+            session_id: 会话ID（用于获取历史上下文）
+            context_manager: 上下文管理器（可选）
 
         Returns:
             stream=False: 返回list（原有行为）
             stream=True: 返回Generator[Dict]，yield流式事件
         """
-        if stream:
-            return self._stream_call(query)
-        else:
-            return self._sync_call(query)
+        # 获取历史上下文
+        history_context = []
+        if session_id and context_manager:
+            ctx = context_manager.get_or_create_context(session_id)
+            history_context = ctx.get_context_for_llm()
 
-    def _sync_call(self, query: str) -> list:
-        """原有同步逻辑（保持向后兼容）"""
+        if stream:
+            return self._stream_call(query, history_context, session_id, context_manager)
+        else:
+            return self._sync_call(query, history_context, session_id, context_manager)
+
+    def _sync_call(self, query: str, history_context: List[Dict] = None, session_id: str = None, context_manager=None) -> list:
+        """
+        同步调用逻辑
+
+        Args:
+            query: 用户查询
+            history_context: 历史上下文（简化版）
+            session_id: 会话ID
+            context_manager: 上下文管理器
+        """
         agent_name = self.start_agent
         res = None
         max_trys = self.max_trys
-        context = [self.__user_message(query)]
+
+        # 保存原始用户查询（用于后续保存到上下文管理器）
+        original_query = query
+
+        # 构建初始context：历史上下文 + 当前用户消息
+        context = []
+
+        # 添加历史上下文
+        if history_context:
+            context.extend(history_context)
+
+        # 添加当前用户消息
+        context.append(self.__user_message(query))
+
+        # 用于收集完整的响应（用于前端显示和保存）
+        full_response_content = ""
+        thinking_steps = []
+
         while res is None or agent_name != "none":
             try:
                 res = self._conversation(user_message=str(context), agent_name=agent_name, stream=False)
@@ -76,39 +109,113 @@ class AgentManager:
                     context.append(self.__error_message(agent_name, message=str(e)))
                     return context
                 continue
+
             if res.status != "success":
                 logger.error(f"Agent '{agent_name}' 返回错误状态: {res.message}")
                 context.append(self.__error_message(agent_name, message=res.message))
                 return context
-            # query = [res.task_list, res.data]
+
+            # 收集完整响应（用于前端显示）
+            full_response_content += f"## {agent_name}\n"
+            full_response_content += f"Reason: {res.agent_selection_reason}\n"
+            if res.message:
+                full_response_content += f"Message: {res.message}\n"
+            # 安全地访问data.answer
+            if res.data:
+                if hasattr(res.data, 'answer') and res.data.answer:
+                    full_response_content += f"Answer: {res.data.answer}\n"
+                elif isinstance(res.data, dict) and res.data.get('answer'):
+                    full_response_content += f"Answer: {res.data['answer']}\n"
+            full_response_content += "\n"
+
+            # 收集thinking steps
+            if agent_name != "entrance_agent" and agent_name != "general_agent":
+                thinking_steps.append({
+                    "agent_name": agent_name,
+                    "reason": res.agent_selection_reason,
+                    "task": res.task_list[0] if res.task_list else None
+                })
+
+            # 构建下一轮查询
             query = {
                 "task_list": res.task_list,
                 "data": res.data
             }
-            context.append(self.__system_message(content=query
-                                                 if isinstance(query, str)
-                                                 else json.dumps(query, ensure_ascii=False),
-                                                 message=res.message))
+            context.append(self.__system_message(
+                content=json.dumps(query, ensure_ascii=False),
+                message=res.message
+            ))
             agent_name = res.next_agent
             max_trys = self.max_trys
             logger.info(f"切换到 Agent: {agent_name}, 响应消息: {res.message}")
+
+        # 保存到上下文管理器
+        if session_id and context_manager:
+            ctx = context_manager.get_or_create_context(session_id)
+            # 提取general_agent的最终答案
+            final_answer = ""
+            for msg in reversed(context):
+                if msg.get("role") == "system" and msg.get("content"):
+                    try:
+                        content_obj = json.loads(msg["content"])
+                        data = content_obj.get("data")
+                        if data:
+                            # 处理AgentData对象和dict两种情况
+                            if hasattr(data, 'answer') and data.answer:
+                                final_answer = data.answer
+                                break
+                            elif isinstance(data, dict) and data.get('answer'):
+                                final_answer = data['answer']
+                                break
+                    except:
+                        pass
+
+            ctx.add_user_message(original_query)  # 使用原始查询
+            ctx.add_assistant_message(
+                full_response=full_response_content,
+                final_answer=final_answer,
+                thinking_steps=thinking_steps
+            )
+
         return context
 
-    def _stream_call(self, query: str) -> Generator[Dict[str, Any], None, None]:
+    def _stream_call(self, query: str, history_context: List[Dict] = None, session_id: str = None, context_manager=None) -> Generator[Dict[str, Any], None, None]:
         """
         流式响应逻辑
+
+        Args:
+            query: 用户查询
+            history_context: 历史上下文（简化版）
+            session_id: 会话ID
+            context_manager: 上下文管理器
 
         Yields:
             Dict: 流式事件字典
         """
         agent_name = self.start_agent
         max_trys = self.max_trys
-        context = [self.__user_message(query)]
+
+        # 保存原始用户查询（用于后续保存到上下文管理器）
+        original_query = query
+
+        # 构建初始context：历史上下文 + 当前用户消息
+        context = []
+
+        # 添加历史上下文
+        if history_context:
+            context.extend(history_context)
+
+        # 添加当前用户消息
+        context.append(self.__user_message(query))
+
+        # 用于收集完整的响应（用于前端显示和保存）
+        full_response_content = ""
+        thinking_steps = []
 
         # 初始元数据事件
         yield {
             "type": "metadata",
-            "data": {"query": query, "start_agent": agent_name},
+            "data": {"query": query, "start_agent": agent_name, "has_history": len(history_context) > 0},
             "metadata": {"stage": "init"}
         }
 
@@ -185,6 +292,27 @@ class AgentManager:
                     "metadata": {"timestamp": self._get_timestamp()}
                 }
 
+                # 收集完整响应（用于前端显示）
+                full_response_content += f"## {agent_name}\n"
+                full_response_content += f"Reason: {res.agent_selection_reason}\n"
+                if res.message:
+                    full_response_content += f"Message: {res.message}\n"
+                # 安全地访问data.answer
+                if res.data:
+                    if hasattr(res.data, 'answer') and res.data.answer:
+                        full_response_content += f"Answer: {res.data.answer}\n"
+                    elif isinstance(res.data, dict) and res.data.get('answer'):
+                        full_response_content += f"Answer: {res.data['answer']}\n"
+                full_response_content += "\n"
+
+                # 收集thinking steps
+                if agent_name != "entrance_agent" and agent_name != "general_agent":
+                    thinking_steps.append({
+                        "agent_name": agent_name,
+                        "reason": res.agent_selection_reason,
+                        "task": res.task_list[0] if res.task_list else None
+                    })
+
                 # 完整Message事件
                 yield {
                     "type": "message",
@@ -222,6 +350,34 @@ class AgentManager:
                 if max_trys <= 0:
                     break
                 continue
+
+        # 保存到上下文管理器（流式调用完成后）
+        if session_id and context_manager:
+            ctx = context_manager.get_or_create_context(session_id)
+            # 提取general_agent的最终答案（从最后一个消息中）
+            final_answer = ""
+            for msg in reversed(context):
+                if msg.get("role") == "system" and msg.get("content"):
+                    try:
+                        content_obj = json.loads(msg["content"])
+                        data = content_obj.get("data")
+                        if data:
+                            # 处理AgentData对象和dict两种情况
+                            if hasattr(data, 'answer') and data.answer:
+                                final_answer = data.answer
+                                break
+                            elif isinstance(data, dict) and data.get('answer'):
+                                final_answer = data['answer']
+                                break
+                    except:
+                        pass
+
+            ctx.add_user_message(original_query)  # 使用原始查询
+            ctx.add_assistant_message(
+                full_response=full_response_content,
+                final_answer=final_answer,
+                thinking_steps=thinking_steps
+            )
 
     def _conversation(
         self,

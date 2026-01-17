@@ -21,7 +21,9 @@ from contextlib import asynccontextmanager
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core import AgentManager
+from core.context_manager import context_manager
 from config import get_config
+from api.database import get_db
 from api.models import (
     ChatRequest,
     ChatResponse,
@@ -37,7 +39,6 @@ from api.models import (
     ConversationsListResponse,
     ConversationResponse
 )
-from api.database import get_db
 
 # 配置日志
 config = get_config()
@@ -60,6 +61,14 @@ async def lifespan(app: FastAPI):
     try:
         # 使用全局配置
         logger.info(f"配置加载成功: {config.settings.APP_NAME} v{config.settings.APP_VERSION}")
+
+        # 初始化数据库服务
+        db = get_db()
+        logger.info("数据库服务初始化成功")
+
+        # 设置数据库服务到context_manager
+        context_manager.set_db_service(db)
+        logger.info("上下文管理器已连接数据库")
 
         # 初始化AgentManager
         agent_manager = AgentManager(
@@ -257,8 +266,13 @@ async def chat(request: ChatRequest):
     )
 
     try:
-        # 同步调用AgentManager
-        response = agent_manager(request.query, stream=False)
+        # 同步调用AgentManager，传递session_id和context_manager
+        response = agent_manager(
+            request.query,
+            stream=False,
+            session_id=session_id,
+            context_manager=context_manager
+        )
 
         # 保存助手消息
         for msg in response:
@@ -326,8 +340,13 @@ async def chat_stream(request: ChatRequest):
         """生成SSE事件流"""
         nonlocal full_response_content, response_events, collected_events
         try:
-            # 流式调用AgentManager
-            for event in agent_manager(request.query, stream=True):
+            # 流式调用AgentManager，传递session_id和context_manager
+            for event in agent_manager(
+                request.query,
+                stream=True,
+                session_id=session_id,
+                context_manager=context_manager
+            ):
                 # 收集事件用于保存
                 response_events.append(event)
 
