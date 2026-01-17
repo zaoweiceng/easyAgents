@@ -112,11 +112,16 @@ export const chatStream = async (query, callbacks, sessionId = null) => {
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          const data = line.slice(6);
+          const data = line.slice(6).trim();
 
           if (data === '[DONE]') {
             onDone && onDone();
             return;
+          }
+
+          // 跳过空行
+          if (!data) {
+            continue;
           }
 
           try {
@@ -139,14 +144,17 @@ export const chatStream = async (query, callbacks, sessionId = null) => {
                 onError && onError(event.data);
                 break;
               case 'metadata':
-                // 可以处理元数据
+                // 元数据用于状态显示，不作为消息内容
                 break;
               default:
-                console.log('未知事件类型:', event.type);
+                console.log('未知事件类型:', event.type, event.data);
             }
           } catch (e) {
             console.error('解析事件失败:', e, data);
           }
+        } else if (line.trim()) {
+          // 忽略非 "data: " 开头的非空行（可能是后端直接输出的调试信息）
+          console.debug('忽略非SSE格式数据:', line.trim());
         }
       }
     }

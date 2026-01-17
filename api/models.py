@@ -119,3 +119,161 @@ class ErrorResponse(BaseModel):
                 "detail": "query字段不能为空"
             }
         }
+
+
+# ============================================================================
+# 历史记录相关模型
+# ============================================================================
+
+class ConversationInfo(BaseModel):
+    """会话信息模型"""
+    id: int = Field(..., description="会话ID")
+    title: str = Field(..., description="会话标题")
+    session_id: str = Field(..., description="会话唯一标识")
+    created_at: str = Field(..., description="创建时间")
+    updated_at: str = Field(..., description="更新时间")
+    message_count: int = Field(..., description="消息数量")
+    model_name: Optional[str] = Field(None, description="使用的模型")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "title": "查询图书信息",
+                "session_id": "abc123",
+                "created_at": "2024-01-01T00:00:00",
+                "updated_at": "2024-01-01T00:05:00",
+                "message_count": 5,
+                "model_name": "openai/gpt-oss-20b"
+            }
+        }
+
+
+class MessageDetail(BaseModel):
+    """消息详情模型"""
+    id: int = Field(..., description="消息ID")
+    role: str = Field(..., description="消息角色")
+    content: str = Field(..., description="消息内容")
+    data: Optional[Dict[str, Any]] = Field(None, description="额外数据")
+    events: Optional[List[Dict[str, Any]]] = Field(None, description="事件列表")
+    created_at: str = Field(..., description="创建时间")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "role": "user",
+                "content": "查询图书信息",
+                "data": None,
+                "events": None,
+                "created_at": "2024-01-01T00:00:00"
+            }
+        }
+
+
+class ConversationDetail(BaseModel):
+    """会话详情模型"""
+    conversation: ConversationInfo = Field(..., description="会话信息")
+    messages: List[MessageDetail] = Field(..., description="消息列表")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "conversation": {
+                    "id": 1,
+                    "title": "查询图书信息",
+                    "session_id": "abc123",
+                    "created_at": "2024-01-01T00:00:00",
+                    "updated_at": "2024-01-01T00:05:00",
+                    "message_count": 5,
+                    "model_name": "openai/gpt-oss-20b"
+                },
+                "messages": [
+                    {
+                        "id": 1,
+                        "role": "user",
+                        "content": "查询图书信息",
+                        "data": None,
+                        "events": None,
+                        "created_at": "2024-01-01T00:00:00"
+                    }
+                ]
+            }
+        }
+
+
+class CreateConversationRequest(BaseModel):
+    """创建会话请求"""
+    title: str = Field(..., min_length=1, max_length=200, description="会话标题")
+    model_name: Optional[str] = Field(None, description="使用的模型")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "title": "新对话",
+                "model_name": "openai/gpt-oss-20b"
+            }
+        }
+
+
+class UpdateConversationTitleRequest(BaseModel):
+    """更新标题请求"""
+    title: str = Field(..., min_length=1, max_length=200, description="新标题")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "title": "更新后的标题"
+            }
+        }
+
+
+class ConversationsListResponse(BaseModel):
+    """会话列表响应"""
+    status: str = Field(..., description="响应状态")
+    conversations: List[ConversationInfo] = Field(..., description="会话列表")
+    total: int = Field(..., description="总数")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "conversations": [
+                    {
+                        "id": 1,
+                        "title": "查询图书信息",
+                        "session_id": "abc123",
+                        "created_at": "2024-01-01T00:00:00",
+                        "updated_at": "2024-01-01T00:05:00",
+                        "message_count": 5,
+                        "model_name": "openai/gpt-oss-20b"
+                    }
+                ],
+                "total": 1
+            }
+        }
+
+
+class ConversationResponse(BaseModel):
+    """会话详情响应"""
+    status: str = Field(..., description="响应状态")
+    data: ConversationDetail = Field(..., description="会话详情")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "data": {
+                    "conversation": {
+                        "id": 1,
+                        "title": "查询图书信息",
+                        "session_id": "abc123",
+                        "created_at": "2024-01-01T00:00:00",
+                        "updated_at": "2024-01-01T00:05:00",
+                        "message_count": 5,
+                        "model_name": "openai/gpt-oss-20b"
+                    },
+                    "messages": []
+                }
+            }
+        }

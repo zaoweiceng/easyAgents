@@ -128,7 +128,8 @@ class AgentManager:
                     "type": "agent_start",
                     "data": {
                         "agent_name": agent_name,
-                        "agent_description": self.agents[agent_name].description
+                        "agent_description": self.agents[agent_name].description,
+                        "agent_status": "processing"
                     },
                     "metadata": {"timestamp": self._get_timestamp()}
                 }
@@ -171,7 +172,9 @@ class AgentManager:
                     "data": {
                         "agent_name": agent_name,
                         "status": res.status,
-                        "next_agent": res.next_agent
+                        "next_agent": res.next_agent,
+                        "agent_selection_reason": res.agent_selection_reason,
+                        "task_list": res.task_list
                     },
                     "metadata": {"timestamp": self._get_timestamp()}
                 }
@@ -304,11 +307,15 @@ class AgentManager:
                     full_content.append(delta.content)
 
                     # Yield delta事件
+                    # 判断是否是最终输出（general_agent的输出）
+                    is_final_output = (agent_name == "general_agent")
+
                     yield {
                         "type": "delta",
                         "data": {
                             "content": delta.content,
-                            "finish_reason": None
+                            "finish_reason": None,
+                            "is_final_output": is_final_output
                         },
                         "metadata": {
                             "agent_name": agent_name,
@@ -319,11 +326,13 @@ class AgentManager:
                 # 检查是否完成
                 finish_reason = chunk.choices[0].finish_reason
                 if finish_reason:
+                    is_final_output = (agent_name == "general_agent")
                     yield {
                         "type": "delta",
                         "data": {
                             "content": "",
-                            "finish_reason": finish_reason
+                            "finish_reason": finish_reason,
+                            "is_final_output": is_final_output
                         },
                         "metadata": {"agent_name": agent_name}
                     }
@@ -333,13 +342,37 @@ class AgentManager:
             complete_content = "".join(full_content)
 
             # 提取JSON响应
-            json_str = (
-                complete_content
-                .split("<|message|>")[-1]
-                .split("``")[-1]
-                .strip()
-            )
-            json_response = json.loads(json_str)
+            # 首先移除markdown代码块标记
+            json_str = complete_content.strip()
+
+            # 移除 ```json 和 ``` 标记
+            if "```" in json_str:
+                # 提取两个```之间的内容
+                parts = json_str.split("```")
+                for i, part in enumerate(parts):
+                    if i % 2 == 1:  # 奇数索引是代码块内容
+                        json_str = part.strip()
+                        if json_str.startswith("json"):
+                            json_str = json_str[4:].strip()
+                        break
+                else:
+                    # 如果没找到代码块，取最后一部分
+                    json_str = parts[-1].strip()
+
+            # 查找 <|message|> 标签之后的内容
+            if "<|message|>" in json_str:
+                json_str = json_str.split("<|message|>")[-1].strip()
+
+            # 记录调试信息
+            logger.debug(f"Agent {agent_name} - 提取的JSON字符串前300字符: {json_str[:300]}")
+
+            try:
+                json_response = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON解析失败: {e}")
+                logger.error(f"完整内容: {complete_content}")
+                logger.error(f"提取的JSON字符串: {json_str}")
+                raise
 
             # 调用Agent处理
             message = Message(**json_response)
@@ -364,14 +397,14 @@ class AgentManager:
             }
 
         except json.JSONDecodeError as e:
-            logger.error(f"JSON解析失败: {e}, 内容: {complete_content[-200:]}")
+            # JSON解析错误已经被上面处理过了，这里只是为了完整性
+            logger.error(f"JSON解析错误未被捕获: {e}")
             yield {
                 "type": "error",
                 "data": {
                     "error_message": f"LLM响应解析失败: {str(e)}",
                     "error_type": "JSONDecodeError",
-                    "agent_name": agent_name,
-                    "recoverable": False
+                    "agent_name": agent_name
                 }
             }
         except Exception as e:

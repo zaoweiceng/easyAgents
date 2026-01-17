@@ -8,6 +8,7 @@ import sys
 import os
 import json
 import logging
+import uuid
 from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -26,8 +27,16 @@ from api.models import (
     AgentsListResponse,
     AgentInfo,
     HealthResponse,
-    ErrorResponse
+    ErrorResponse,
+    ConversationInfo,
+    MessageDetail,
+    ConversationDetail,
+    CreateConversationRequest,
+    UpdateConversationTitleRequest,
+    ConversationsListResponse,
+    ConversationResponse
 )
+from api.database import get_db
 
 # 配置日志
 config = get_config()
@@ -227,14 +236,42 @@ async def chat(request: ChatRequest):
     if agent_manager is None:
         raise HTTPException(status_code=503, detail="服务未初始化")
 
+    db = get_db()
+
+    # 如果没有 session_id，创建新会话
+    if not request.session_id:
+        session_id = str(uuid.uuid4())
+        # 使用第一条消息作为标题（前50字符）
+        title = request.query[:50] + "..." if len(request.query) > 50 else request.query
+        db.create_conversation(title, session_id)
+    else:
+        session_id = request.session_id
+
+    # 保存用户消息
+    conv = db.get_conversation_by_session(session_id)
+    db.add_message(
+        conversation_id=conv['id'],
+        role='user',
+        content=request.query
+    )
+
     try:
         # 同步调用AgentManager
         response = agent_manager(request.query, stream=False)
 
+        # 保存助手消息
+        for msg in response:
+            db.add_message(
+                conversation_id=conv['id'],
+                role=msg.role,
+                content=msg.content or msg.message or '',
+                data=msg.data if hasattr(msg, 'data') else None
+            )
+
         return ChatResponse(
             status="success",
             response=response,
-            session_id=request.session_id
+            session_id=session_id
         )
 
     except Exception as e:
@@ -260,17 +297,72 @@ async def chat_stream(request: ChatRequest):
     if agent_manager is None:
         raise HTTPException(status_code=503, detail="服务未初始化")
 
+    db = get_db()
+
+    # 如果没有 session_id，创建新会话
+    if not request.session_id:
+        session_id = str(uuid.uuid4())
+        # 使用第一条消息作为标题（前50字符）
+        title = request.query[:50] + "..." if len(request.query) > 50 else request.query
+        db.create_conversation(title, session_id)
+    else:
+        session_id = request.session_id
+
+    # 保存用户消息
+    conv = db.get_conversation_by_session(session_id)
+    db.add_message(
+        conversation_id=conv['id'],
+        role='user',
+        content=request.query
+    )
+
+    # 用于收集流式响应内容
+    full_response_content = ""
+    response_events = []
+    collected_events = []  # 收集所有事件用于保存到数据库
+
     async def generate():
         """生成SSE事件流"""
+        nonlocal full_response_content, response_events, collected_events
         try:
             # 流式调用AgentManager
             for event in agent_manager(request.query, stream=True):
+                # 收集事件用于保存
+                response_events.append(event)
+
+                # 收集agent_start和agent_end事件
+                if event.get("type") in ["agent_start", "agent_end"]:
+                    collected_events.append(event)
+
+                # 收集delta内容
+                if event.get("type") == "delta":
+                    full_response_content += event.get("data", {}).get("content", "")
+
                 # 转换为SSE格式
                 sse_data = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 yield sse_data
 
             # 发送完成标记
             yield "data: [DONE]\n\n"
+
+            # 保存助手消息（在流结束后）
+            try:
+                # 构造消息数据
+                msg_data = None
+                for event in response_events:
+                    if event.get("type") == "message":
+                        msg_data = event.get("data", {}).get("message")
+                        break
+
+                db.add_message(
+                    conversation_id=conv['id'],
+                    role='assistant',
+                    content=full_response_content,
+                    data=msg_data,
+                    events=collected_events if collected_events else None
+                )
+            except Exception as save_error:
+                logger.error(f"保存流式消息失败: {save_error}")
 
         except Exception as e:
             logger.error(f"流式聊天处理失败: {e}")
@@ -294,6 +386,136 @@ async def chat_stream(request: ChatRequest):
             "X-Accel-Buffering": "no"  # 禁用nginx缓冲
         }
     )
+
+
+# ============================================================================
+# 历史记录接口
+# ============================================================================
+
+@app.post("/conversations", response_model=ConversationResponse, tags=["历史记录"])
+async def create_conversation(request: CreateConversationRequest):
+    """
+    创建新会话
+    """
+    db = get_db()
+    session_id = str(uuid.uuid4())
+
+    conv_id = db.create_conversation(
+        title=request.title,
+        session_id=session_id,
+        model_name=request.model_name
+    )
+
+    conv = db.get_conversation_by_session(session_id)
+
+    return ConversationResponse(
+        status="success",
+        data=ConversationDetail(
+            conversation=conv,
+            messages=[]
+        )
+    )
+
+
+@app.get("/conversations", response_model=ConversationsListResponse, tags=["历史记录"])
+async def list_conversations(limit: int = 50, offset: int = 0):
+    """
+    获取会话列表
+
+    按更新时间降序排列
+    """
+    db = get_db()
+    conversations = db.list_conversations(limit=limit, offset=offset)
+
+    return ConversationsListResponse(
+        status="success",
+        conversations=conversations,
+        total=len(conversations)
+    )
+
+
+@app.get("/conversations/{session_id}", response_model=ConversationResponse, tags=["历史记录"])
+async def get_conversation(session_id: str):
+    """
+    获取会话详情（包括所有消息）
+    """
+    db = get_db()
+    conv = db.get_conversation_by_session(session_id)
+
+    if not conv:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    messages = db.get_messages(conv['id'])
+
+    return ConversationResponse(
+        status="success",
+        data=ConversationDetail(
+            conversation=conv,
+            messages=messages
+        )
+    )
+
+
+@app.put("/conversations/{session_id}/title", tags=["历史记录"])
+async def update_conversation_title(
+    session_id: str,
+    request: UpdateConversationTitleRequest
+):
+    """
+    更新会话标题
+    """
+    db = get_db()
+    success = db.update_conversation_title(session_id, request.title)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    return {"status": "success", "message": "标题更新成功"}
+
+
+@app.delete("/conversations/{session_id}", tags=["历史记录"])
+async def delete_conversation(session_id: str):
+    """
+    删除会话（包括所有消息）
+    """
+    db = get_db()
+    success = db.delete_conversation(session_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    return {"status": "success", "message": "会话删除成功"}
+
+
+@app.get("/conversations/search/{query}", tags=["历史记录"])
+async def search_conversations(query: str, limit: int = 20):
+    """
+    搜索会话
+
+    搜索标题和消息内容
+    """
+    db = get_db()
+    conversations = db.search_conversations(query, limit)
+
+    return ConversationsListResponse(
+        status="success",
+        conversations=conversations,
+        total=len(conversations)
+    )
+
+
+@app.get("/conversations/{session_id}/export", tags=["历史记录"])
+async def export_conversation(session_id: str):
+    """
+    导出会话（JSON格式）
+    """
+    db = get_db()
+    data = db.export_conversation(session_id)
+
+    if not data:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    return data
 
 
 # ============================================================================

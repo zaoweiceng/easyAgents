@@ -1,5 +1,5 @@
 /**
- * easyAgent Web App - 全局样式
+ * easyAgent Web App - ChatGPT风格全局样式
  */
 
 /* Reset & Base Styles */
@@ -15,7 +15,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #f5f5f5;
+  background: white;
+  overflow: hidden; /* 消除页面滚动条 */
 }
 
 code {
@@ -23,14 +24,26 @@ code {
 }
 
 #root {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* App Container */
 .app {
   display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* 隐藏全局滚动条 */
+body::-webkit-scrollbar,
+html::-webkit-scrollbar {
+  display: none;
+}
+
+body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Navigation Bar */
