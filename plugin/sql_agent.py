@@ -1,4 +1,6 @@
-from core import Agent, Message, PromptTemplate
+from core.agent import Agent
+from core.base_model import Message
+from core.prompt.template_model import PromptTemplate
 
 system_instructions = \
 """
@@ -39,46 +41,45 @@ class SqlAgent(Agent):
             data_fields=data_fields
         )
 
-    def run(self, message:Message) -> Message:
+    def run(self, message: Message):
+        """
+        执行SQL查询并返回结果
+
+        新版本：直接返回数据字典，系统会自动封装到Message中
+        """
         sql = message.data.get("sql", "")
-        # print(f"---------------------SQL: {sql}")
+
+        # 根据SQL内容模拟查询结果
         if "id = 2" in sql:
-            message.data = {
-                # 查询到的图书信息
-                **message.data,
-                "result":{
-                    "id" : 2,
-                    "title": "1984",
-                    "author": "乔治·奥威尔",
-                    "publisher": "人民文学出版社",
-                    "publish_year": 1949,
-                    "price": 49.99,
-                }
+            result = {
+                "id": 2,
+                "title": "1984",
+                "author": "乔治·奥威尔",
+                "publisher": "人民文学出版社",
+                "publish_year": 1949,
+                "price": 49.99,
             }
-            return message
         elif "呼啸山庄" in sql or 'abc' in sql:
-            message.data = {
-                # 查询到的图书信息
-                **message.data,
-                "result":{
-                    "id" : 1,
-                    "title": "呼啸山庄",
-                    "author": "abc",
-                    "publisher": "qwq出版社",
-                    "publish_year": 2023,
-                    "price": 99.99,
-                }
+            result = {
+                "id": 1,
+                "title": "呼啸山庄",
+                "author": "abc",
+                "publisher": "qwq出版社",
+                "publish_year": 2023,
+                "price": 99.99,
             }
         else:
-            message.data = {
-                **message.data,
-                "result": {
-                    "book_id" : 0,
-                    "title": "未知",
-                    "author": "未知",
-                    "publisher": "未知",
-                    "publish_year": 0,
-                    "price": 0.0,
-                }
+            result = {
+                "book_id": 0,
+                "title": "未知",
+                "author": "未知",
+                "publisher": "未知",
+                "publish_year": 0,
+                "price": 0.0,
             }
-        return message
+
+        # 直接返回结果字典，系统会自动：
+        # 1. 将result放到Message.data中
+        # 2. 设置next_agent="general_agent"继续处理
+        # 3. 自动生成task_list和message
+        return result

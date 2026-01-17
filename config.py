@@ -206,7 +206,7 @@ class AppConfig:
         return {
             "level": self.settings.LOG_LEVEL,
             "filename": self.settings.LOG_FILE,
-            "format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+            "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         }
 
     def setup_logging(self):
@@ -223,7 +223,20 @@ class AppConfig:
 
         # 控制台handler
         console_handler = logging.StreamHandler()
-        formatter = logging.Formatter(log_config["format"])
+
+        # 自定义Formatter以支持毫秒格式（3位，使用逗号分隔）
+        class MillisecondFormatter(logging.Formatter):
+            def formatTime(self, record, datefmt=None):
+                import datetime
+                ct = datetime.datetime.fromtimestamp(record.created)
+                # 生成时间部分: YYYY-MM-DD HH:MM:SS,mmm
+                s = ct.strftime("%Y-%m-%d %H:%M:%S")
+                # 添加毫秒（3位，使用逗号分隔）
+                milliseconds = ct.microsecond // 1000  # 转换为毫秒
+                s = f"{s},{milliseconds:03d}"
+                return s
+
+        formatter = MillisecondFormatter(log_config["format"])
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
@@ -234,7 +247,7 @@ class AppConfig:
             if log_dir and not os.path.exists(log_dir):
                 os.makedirs(log_dir, exist_ok=True)
 
-            # 使用轮转文件handler
+            # 使用轮转文件handler，使用相同的formatter
             file_handler = logging.handlers.RotatingFileHandler(
                 log_config["filename"],
                 maxBytes=10*1024*1024,  # 10MB
