@@ -9,6 +9,7 @@ import os
 import json
 import logging
 import uuid
+import asyncio
 from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -340,7 +341,13 @@ async def chat_stream(request: ChatRequest):
 
                 # 转换为SSE格式
                 sse_data = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+                # 立即yield，确保数据立即发送
                 yield sse_data
+
+                # 强制flush（在async生成器中，yield会自动触发flush）
+                # 但我们可以通过异步await来确保事件循环切换
+                await asyncio.sleep(0)  # 让出控制权，确保数据发送
 
             # 发送完成标记
             yield "data: [DONE]\n\n"

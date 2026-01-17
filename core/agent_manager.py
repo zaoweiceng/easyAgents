@@ -10,7 +10,7 @@ from datetime import datetime
 import time
 
 logger = logging.getLogger(app_name)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.INFO)  # 改为INFO级别以查看流式日志
 
 
 class AgentManager:
@@ -123,7 +123,8 @@ class AgentManager:
                 break
 
             try:
-                # Agent开始事件
+                # Agent开始事件 - 立即yield
+                logger.info(f"[STREAM] Yielding agent_start for {agent_name}")
                 yield {
                     "type": "agent_start",
                     "data": {
@@ -136,16 +137,21 @@ class AgentManager:
 
                 # 流式conversation
                 res = None
+                event_count = 0
                 for event in self._conversation(
                     user_message=str(context),
                     agent_name=agent_name,
                     stream=True
                 ):
+                    event_count += 1
                     # 转发LLM的delta事件
                     if event["type"] == "delta":
+                        if event_count % 10 == 1:  # 每10个delta记录一次
+                            logger.info(f"[STREAM] Yielding delta #{event_count} for {agent_name}")
                         yield event
                     elif event["type"] == "message":
                         # 收到完整Message
+                        logger.info(f"[STREAM] Received complete message for {agent_name}")
                         res = Message(**event["data"]["message"])
                     elif event["type"] == "metadata":
                         # 转发元数据（如token使用）
