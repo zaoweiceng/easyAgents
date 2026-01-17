@@ -1,7 +1,43 @@
-from typing import TypeVar, Generic, Optional, Literal
+from typing import TypeVar, Generic, Optional, Literal, Dict, Any
 from pydantic import BaseModel, Field
+from enum import Enum
 
 T = TypeVar('T')
+
+
+class StreamEventType(str, Enum):
+    """流式事件类型枚举"""
+    DELTA = "delta"              # LLM增量内容（文本片段）
+    AGENT_START = "agent_start"  # Agent开始执行
+    AGENT_END = "agent_end"      # Agent结束执行
+    MESSAGE = "message"          # 完整Message对象
+    ERROR = "error"              # 错误信息
+    METADATA = "metadata"        # 元数据信息
+    STATUS = "status"            # 状态更新
+
+
+class StreamEvent(BaseModel):
+    """流式事件对象"""
+    type: StreamEventType = Field(
+        ...,
+        description="事件类型"
+    )
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="事件数据，内容根据type不同而变化"
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="可选的元数据（如时间戳、agent名称等）"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式，用于JSON序列化"""
+        return {
+            "type": self.type.value,
+            "data": self.data,
+            "metadata": self.metadata
+        }
 
 class Message(BaseModel, Generic[T]):
     """大模型响应基类"""

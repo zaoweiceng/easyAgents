@@ -4,8 +4,10 @@ MCP Agent - 将MCP服务器的工具包装为Agent
 """
 
 from typing import Dict, List, Any, Optional
-from core import Agent, Message, PromptTemplate
-from core.mcp_client import MCPClient, SyncMCPClient, MCPTransportType
+from ..agent import Agent
+from ..base_model import Message
+from ..prompt.template_model import PromptTemplate
+from ..mcp_client import MCPClient, SyncMCPClient, MCPTransportType
 import logging
 import subprocess
 import time

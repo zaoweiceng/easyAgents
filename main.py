@@ -11,6 +11,17 @@ import os
 
 def main():
     """主函数"""
+    import argparse
+
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='easyAgent - 多Agent协作系统')
+    parser.add_argument('query', nargs='?', help='查询内容（可选）')
+    parser.add_argument('--stream', action='store_true', help='启用流式输出')
+    parser.add_argument('--example', type=int, choices=[1, 2, 3],
+                       help='使用预设查询示例（1-3）')
+
+    args = parser.parse_args()
+
     # 加载配置
     config = get_config()
 
@@ -60,35 +71,73 @@ def main():
             status = "✓ 活跃" if agent.is_active else "✗ 不活跃"
             logger.info(f"  - {agent_name}: {status}")
 
-        # 执行查询
+        # 预设查询示例
         query_examples = [
             "abc写了一本书，帮我查询一下这本书的出版信息",
             "圆周率精确到3位小数是多少？",
             "先帮我查一下呼啸山庄的作者是谁，然后再帮我查一下id为2的书籍的出版信息"
         ]
 
-        # 使用第一个查询作为示例
-        if len(sys.argv) > 1:
-            # 使用命令行参数作为查询
-            query = " ".join(sys.argv[1:])
+        # 确定查询内容
+        if args.example:
+            query = query_examples[args.example - 1]
+            logger.info(f"使用示例查询 {args.example}: {query}")
+        elif args.query:
+            query = args.query
             logger.info(f"执行查询: {query}")
         else:
-            # 使用默认查询
             query = query_examples[0]
             logger.info(f"执行默认查询: {query}")
 
-        response = agent_manager(query)
+        # 执行查询
+        if args.stream:
+            # 流式模式
+            logger.info("="*50)
+            logger.info("流式响应:")
+            logger.info("="*50)
 
-        # 输出响应
-        logger.info("="*50)
-        logger.info("响应:")
-        for i, msg in enumerate(response):
-            if msg.get("message"):
-                logger.info(f"[{i+1}] {msg['role']}: {msg['message']}")
-            elif msg.get("content"):
-                logger.debug(f"[{i+1}] {msg['role']}: {msg['content'][:100]}...")
+            for event in agent_manager(query, stream=True):
+                event_type = event["type"]
 
-        logger.info("="*50)
+                if event_type == "delta":
+                    # 实时显示LLM生成的内容
+                    content = event["data"]["content"]
+                    if content:
+                        print(content, end="", flush=True)
+
+                elif event_type == "agent_start":
+                    agent_name = event["data"]["agent_name"]
+                    print(f"\n[Agent: {agent_name}] ", end="", flush=True)
+
+                elif event_type == "agent_end":
+                    agent_name = event["data"]["agent_name"]
+                    status = event["data"]["status"]
+                    print(f"\n✓ {agent_name} 完成 ({status})", flush=True)
+
+                elif event_type == "error":
+                    error_msg = event["data"]["error_message"]
+                    print(f"\n✗ 错误: {error_msg}", flush=True)
+
+                elif event_type == "metadata":
+                    # 元数据（可选显示）
+                    pass
+
+            print()  # 最后换行
+
+        else:
+            # 同步模式（原有行为）
+            response = agent_manager(query)
+
+            # 输出响应
+            logger.info("="*50)
+            logger.info("响应:")
+            for i, msg in enumerate(response):
+                if msg.get("message"):
+                    logger.info(f"[{i+1}] {msg['role']}: {msg['message']}")
+                elif msg.get("content"):
+                    logger.debug(f"[{i+1}] {msg['role']}: {msg['content'][:100]}...")
+
+            logger.info("="*50)
 
     except Exception as e:
         logger.error(f"AgentManager初始化或运行失败: {e}")
