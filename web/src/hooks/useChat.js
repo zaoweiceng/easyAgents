@@ -26,6 +26,7 @@ export const useChat = (initialSessionId = null) => {
   const [isPaused, setIsPaused] = useState(false);  // 标记是否处于暂停状态
   const currentMessageRef = useRef(null);  // 引用当前正在累积的消息对象
   const thinkingStepsRef = useRef([]);  // 使用ref来始终获取最新的thinking steps
+  const [titleUpdate, setTitleUpdate] = useState(null);  // 保存标题更新信息
 
   /**
    * 发送消息（同步模式）
@@ -289,6 +290,14 @@ export const useChat = (initialSessionId = null) => {
               console.log('收到 session_id:', data.session_id);
               setSessionId(data.session_id);
             }
+            // 处理标题更新
+            if (data.title_updated && data.new_title) {
+              console.log('收到标题更新:', data.new_title);
+              setTitleUpdate({
+                sessionId: data.session_id,
+                newTitle: data.new_title
+              });
+            }
           },
           onError: (data) => {
             setError(data.error_message);
@@ -484,6 +493,16 @@ export const useChat = (initialSessionId = null) => {
               }
             }
           },
+          onMetadata: (data) => {
+            // 处理标题更新
+            if (data.title_updated && data.new_title) {
+              console.log('收到标题更新:', data.new_title);
+              setTitleUpdate({
+                sessionId: data.session_id,
+                newTitle: data.new_title
+              });
+            }
+          },
           onError: (data) => {
             setError(data.error_message);
             setMessages((prev) => [
@@ -647,6 +666,7 @@ export const useChat = (initialSessionId = null) => {
     error,
     sessionId,
     isPaused,
+    titleUpdate,
     sendSyncMessage,
     sendStreamMessage,
     submitFormAndResume,

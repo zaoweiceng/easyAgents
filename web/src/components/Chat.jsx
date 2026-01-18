@@ -15,7 +15,8 @@ export const Chat = ({
   onToggleSidebar,
   settings,
   onSettingsChange,
-  currentSessionId
+  currentSessionId,
+  onTitleUpdate
 }) => {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -29,6 +30,7 @@ export const Chat = ({
     currentAgent,
     error,
     sessionId,
+    titleUpdate,
     sendSyncMessage,
     sendStreamMessage,
     submitFormAndResume,
@@ -62,6 +64,13 @@ export const Chat = ({
       clearMessages();
     }
   }, [currentSessionId, loadConversation, clearMessages]);
+
+  // 监听titleUpdate，通知父组件
+  useEffect(() => {
+    if (titleUpdate && onTitleUpdate) {
+      onTitleUpdate(titleUpdate);
+    }
+  }, [titleUpdate, onTitleUpdate]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;

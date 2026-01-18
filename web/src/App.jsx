@@ -1,7 +1,7 @@
 /**
  * easyAgent Web App - ChatGPT风格主应用
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Chat } from './components/Chat';
 import { Sidebar } from './components/Sidebar';
 import { useConversations } from './hooks/useConversations';
@@ -12,6 +12,7 @@ function App() {
   const [settings, setSettings] = useState({
     chatMode: 'stream', // 'sync' or 'stream'
   });
+  const [titleUpdate, setTitleUpdate] = useState(null); // 保存标题更新信息
 
   const {
     conversations,
@@ -22,6 +23,7 @@ function App() {
     deleteConversation,
     searchConversations,
     exportConversation,
+    setConversations,
   } = useConversations();
 
   const handleNewChat = async () => {
@@ -40,6 +42,20 @@ function App() {
     setSettings(newSettings);
   };
 
+  // 监听titleUpdate变化，更新会话列表中的标题
+  useEffect(() => {
+    if (titleUpdate && titleUpdate.sessionId && titleUpdate.newTitle) {
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.session_id === titleUpdate.sessionId
+            ? { ...conv, title: titleUpdate.newTitle }
+            : conv
+        )
+      );
+      console.log('已更新会话标题:', titleUpdate.newTitle);
+    }
+  }, [titleUpdate, setConversations]);
+
   return (
     <div className="app">
       <Sidebar
@@ -48,7 +64,7 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onNewChat={handleNewChat}
         onDeleteConversation={deleteConversation}
-        onExportConversation={exportConversation}
+        onExportConversation={(sessionId, format) => exportConversation(sessionId, format)}
         onSearch={searchConversations}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
@@ -60,6 +76,7 @@ function App() {
         settings={settings}
         onSettingsChange={handleSettingsChange}
         currentSessionId={currentSessionId}
+        onTitleUpdate={setTitleUpdate}
       />
     </div>
   );

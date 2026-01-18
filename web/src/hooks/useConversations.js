@@ -170,31 +170,47 @@ export const useConversations = () => {
 
   /**
    * 导出会话
+   * @param {string} sessionId - 会话ID
+   * @param {string} format - 导出格式: 'json' 或 'pdf' (默认: 'json')
    */
-  const exportConversation = useCallback(async (sessionId) => {
+  const exportConversation = useCallback(async (sessionId, format = 'json') => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/conversations/${sessionId}/export`
-      );
+      const endpoint = format === 'pdf'
+        ? `${API_BASE_URL}/conversations/${sessionId}/export/pdf`
+        : `${API_BASE_URL}/conversations/${sessionId}/export`;
+
+      const response = await fetch(endpoint);
 
       if (!response.ok) {
         throw new Error('导出失败');
       }
 
-      const data = await response.json();
-
-      // 触发下载
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: 'application/json',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `conversation-${sessionId}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      if (format === 'pdf') {
+        // PDF格式：直接下载二进制文件
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `conversation-${sessionId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        // JSON格式：解析后再下载
+        const data = await response.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: 'application/json',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `conversation-${sessionId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
     } catch (err) {
       console.error('导出失败:', err);
       throw err;
@@ -208,6 +224,7 @@ export const useConversations = () => {
 
   return {
     conversations,
+    setConversations,
     currentSessionId,
     isLoading,
     error,

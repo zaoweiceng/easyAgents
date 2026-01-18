@@ -452,6 +452,36 @@ async def chat_stream(request: ChatRequest):
             # 保存助手消息（正常完成时）
             save_message_to_db()
 
+            # 生成并更新会话标题（仅在正常完成时）
+            if not paused and full_response_content.strip():
+                try:
+                    logger.info("正在生成会话标题...")
+                    # 调用agent_manager生成标题
+                    new_title = agent_manager.generate_title(
+                        query=request.query,
+                        response=full_response_content
+                    )
+
+                    # 更新数据库中的会话标题
+                    if db.update_conversation_title(session_id, new_title):
+                        logger.info(f"✓ 会话标题已更新: {new_title}")
+
+                        # 发送标题更新事件给前端
+                        title_update_event = {
+                            "type": "metadata",
+                            "data": {
+                                "title_updated": True,
+                                "new_title": new_title,
+                                "session_id": session_id
+                            }
+                        }
+                        yield f"data: {json.dumps(title_update_event, ensure_ascii=False)}\n\n"
+                    else:
+                        logger.warning("更新会话标题失败")
+                except Exception as title_error:
+                    logger.error(f"生成标题时出错: {title_error}")
+                    # 标题生成失败不影响主流程
+
         except Exception as e:
             logger.error(f"流式聊天处理失败: {e}")
             # 发送错误事件
@@ -694,6 +724,45 @@ async def chat_stream_resume(request: ChatRequest):
             # 保存助手消息（正常完成时）
             save_resume_message_to_db()
 
+            # 生成并更新会话标题（仅在正常完成时）
+            if not paused and full_response_content.strip():
+                try:
+                    logger.info("正在生成会话标题...")
+                    # 从暂停的上下文中获取原始用户查询
+                    original_query = "用户对话"
+                    if paused_context and 'context' in paused_context:
+                        # 查找原始用户消息（第一条role为user的消息）
+                        for msg in paused_context['context']:
+                            if isinstance(msg, dict) and msg.get('role') == 'user':
+                                original_query = msg.get('content', '用户对话')
+                                break
+
+                    # 调用agent_manager生成标题
+                    new_title = agent_manager.generate_title(
+                        query=original_query,
+                        response=full_response_content
+                    )
+
+                    # 更新数据库中的会话标题
+                    if db.update_conversation_title(session_id, new_title):
+                        logger.info(f"✓ 会话标题已更新: {new_title}")
+
+                        # 发送标题更新事件给前端
+                        title_update_event = {
+                            "type": "metadata",
+                            "data": {
+                                "title_updated": True,
+                                "new_title": new_title,
+                                "session_id": session_id
+                            }
+                        }
+                        yield f"data: {json.dumps(title_update_event, ensure_ascii=False)}\n\n"
+                    else:
+                        logger.warning("更新会话标题失败")
+                except Exception as title_error:
+                    logger.error(f"生成标题时出错: {title_error}")
+                    # 标题生成失败不影响主流程
+
             # 清除暂停上下文（只有在正常完成时）
             if not paused:
                 db.clear_paused_context(session_id)
@@ -850,6 +919,33 @@ async def export_conversation(session_id: str):
         raise HTTPException(status_code=404, detail="会话不存在")
 
     return data
+
+
+@app.get("/conversations/{session_id}/export/pdf", tags=["历史记录"])
+async def export_conversation_pdf(session_id: str):
+    """
+    导出会话为PDF文件
+
+    返回PDF格式的对话记录
+    """
+    from fastapi.responses import Response
+
+    db = get_db()
+    pdf_bytes = db.export_conversation_to_pdf(session_id)
+
+    if not pdf_bytes:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    # 使用固定的简单文件名
+    filename = "conversation.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
 
 
 # ============================================================================

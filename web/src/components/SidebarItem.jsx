@@ -2,11 +2,12 @@
  * 单个历史记录项组件
  */
 import { useState } from 'react';
-import { Trash2, MessageSquare, Clock, Download } from 'lucide-react';
+import { Trash2, MessageSquare, Clock, Download, ChevronDown } from 'lucide-react';
 import './SidebarItem.css';
 
 export const SidebarItem = ({ conversation, isActive, onClick, onDelete, onExport }) => {
   const [showDelete, setShowDelete] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -25,11 +26,19 @@ export const SidebarItem = ({ conversation, isActive, onClick, onDelete, onExpor
     }
   };
 
+  const handleExport = (format) => {
+    setShowExportMenu(false);
+    onExport(format);
+  };
+
   return (
     <div
       className={`sidebar-item ${isActive ? 'active' : ''}`}
       onMouseEnter={() => setShowDelete(true)}
-      onMouseLeave={() => setShowDelete(false)}
+      onMouseLeave={() => {
+        setShowDelete(false);
+        setShowExportMenu(false);
+      }}
     >
       <button className="sidebar-item-content" onClick={onClick}>
         <MessageSquare size={16} className="item-icon" />
@@ -46,16 +55,38 @@ export const SidebarItem = ({ conversation, isActive, onClick, onDelete, onExpor
 
       {showDelete && (
         <>
-          <button
-            className="sidebar-item-export"
-            onClick={(e) => {
-              e.stopPropagation();
-              onExport();
-            }}
-            title="导出对话"
-          >
-            <Download size={16} />
-          </button>
+          <div style={{ position: 'absolute', right: '48px', top: '50%', transform: 'translateY(-50%)', zIndex: 11 }}>
+            <div
+              className="sidebar-item-export"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowExportMenu(!showExportMenu);
+              }}
+              title="导出对话"
+              style={{ position: 'relative', cursor: 'pointer', padding: '6px', borderRadius: '6px', background: '#e0f2fe', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              onMouseEnter={(e) => e.currentTarget.style.background = '#bae6fd'}
+              onMouseLeave={(e) => e.currentTarget.style.background = '#e0f2fe'}
+            >
+              <Download size={16} />
+              {showExportMenu && (
+                <div className="export-menu" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="export-menu-item"
+                    onClick={() => handleExport('json')}
+                  >
+                    导出为 JSON
+                  </div>
+                  <div
+                    className="export-menu-item"
+                    onClick={() => handleExport('pdf')}
+                  >
+                    导出为 PDF
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           <button
             className="sidebar-item-delete"
             onClick={(e) => {

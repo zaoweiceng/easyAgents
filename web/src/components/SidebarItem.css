@@ -57,37 +57,79 @@
   color: #9ca3af;
 }
 
-.sidebar-item-delete,
-.sidebar-item-export {
+.sidebar-item-delete {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
+  right: 8px;
   padding: 6px;
   border: none;
   border-radius: 6px;
+  background: #fee2e2;
+  color: #dc2626;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
-}
-
-.sidebar-item-export {
-  right: 48px;
-  background: #e0f2fe;
-  color: #0284c7;
-}
-
-.sidebar-item-export:hover {
-  background: #bae6fd;
-}
-
-.sidebar-item-delete {
-  right: 8px;
-  background: #fee2e2;
-  color: #dc2626;
+  z-index: 10;
 }
 
 .sidebar-item-delete:hover {
   background: #fecaca;
+}
+
+/* 导出按钮（使用div而不是button） */
+.sidebar-item-export {
+  padding: 6px;
+  border-radius: 6px;
+  background: #e0f2fe;
+  color: #0284c7;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.sidebar-item-export:hover {
+  background: #bae6fd';
+}
+
+/* 导出菜单样式 */
+.export-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  z-index: 100;
+  min-width: 140px;
+  overflow: hidden;
+}
+
+.export-menu-item {
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-menu-item:hover {
+  background: #f3f4f6;
+}
+
+.export-menu-item:first-child {
+  border-bottom: 1px solid #e5e7eb;
 }

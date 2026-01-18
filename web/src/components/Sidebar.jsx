@@ -92,7 +92,7 @@ export const Sidebar = ({
                 isActive={conv.session_id === currentSessionId}
                 onClick={() => onSelectConversation(conv)}
                 onDelete={() => onDeleteConversation(conv.session_id)}
-                onExport={() => onExportConversation(conv.session_id)}
+                onExport={(format) => onExportConversation(conv.session_id, format)}
               />
             ))
           )}

@@ -607,6 +607,64 @@ class AgentManager:
         """获取ISO格式时间戳"""
         return datetime.utcnow().isoformat() + "Z"
 
+    def generate_title(self, query: str, response: str) -> str:
+        """
+        基于用户查询和回复生成对话标题
+
+        Args:
+            query: 用户的原始查询
+            response: AI助手的最终回复
+
+        Returns:
+            str: 生成的标题（最多30个字符）
+        """
+        try:
+            # 构建生成标题的提示词
+            title_prompt = """你是一个专业的对话标题生成助手。请根据用户的查询和AI的回复，生成一个简短、准确的对话标题。
+
+要求：
+1. 标题应该简洁明了，概括对话的核心内容
+2. 标题长度控制在15-25个汉字之间
+3. 不要使用标点符号或特殊字符
+4. 直接返回标题文本，不要任何解释或额外内容
+
+用户查询：{query}
+
+AI回复：{response}
+
+请生成标题："""
+
+            # 调用LLM生成标题
+            title_response = self.llm.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "user", "content": title_prompt.format(query=query, response=response[:500])}
+                ],
+                temperature=0.7,
+                max_tokens=50
+            )
+
+            # 提取标题文本
+            title = title_response.choices[0].message.content.strip()
+
+            # 清理可能的引号和多余空格
+            title = title.strip('"').strip("'").strip()
+
+            # 如果生成的标题太长，截断它
+            if len(title) > 30:
+                title = title[:30]
+
+            logger.info(f"生成对话标题: {title}")
+            return title
+
+        except Exception as e:
+            logger.error(f"生成标题失败: {e}")
+            # 如果生成失败，返回查询的前30个字符作为后备
+            fallback_title = query[:30]
+            if len(query) > 30:
+                fallback_title += "..."
+            return fallback_title
+
     # 保持向后兼容的公共方法
     def conversation(self, user_message, agent_name: str = "entrance_agent") -> Message:
         """与指定 Agent 进行对话（向后兼容的公共方法）"""
