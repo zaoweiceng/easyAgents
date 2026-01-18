@@ -448,7 +448,14 @@ class AgentManager:
                     {"role": "user", "content": user_message}
                 ],
             )
-            json_response = json.loads(response.choices[0].message.content
+            content = response.choices[0].message.content
+
+            # 移除 </think>... 或 <thinking>...</thinking> 标签及其内容
+            import re
+            thinking_pattern = r'<th?ink?[^>]*>.*?</th?ink?>'
+            content = re.sub(thinking_pattern, '', content, flags=re.DOTALL)
+
+            json_response = json.loads(content
                                        .split("<|message|>")[-1]
                                        .split("``")[-1]
                                        .strip())
@@ -481,7 +488,13 @@ class AgentManager:
                 stream=True  # 启用流式
             )
 
-            # 收集增量内容
+            # 收集增量内容，同时过滤thinking标签
+            # 简单状态跟踪：如果在thinking标签中，不yield任何内容
+            import re
+            accumulated_content = ""
+            last_yielded_length = 0
+            in_thinking = False
+
             for chunk in stream_response:
                 # 提取delta内容
                 delta = chunk.choices[0].delta
@@ -489,23 +502,41 @@ class AgentManager:
                 # 检查是否有content
                 if hasattr(delta, 'content') and delta.content:
                     full_content.append(delta.content)
+                    accumulated_content += delta.content
 
-                    # Yield delta事件
-                    # 判断是否是最终输出（general_agent的输出）
-                    is_final_output = (agent_name == "general_agent")
+                    # 检查是否进入thinking状态（检测开始标签）
+                    if not in_thinking:
+                        if re.search(r'<th?ink?[^>]*>', accumulated_content):
+                            in_thinking = True
 
-                    yield {
-                        "type": "delta",
-                        "data": {
-                            "content": delta.content,
-                            "finish_reason": None,
-                            "is_final_output": is_final_output
-                        },
-                        "metadata": {
-                            "agent_name": agent_name,
-                            "timestamp": self._get_timestamp()
-                        }
-                    }
+                    # 检查是否离开thinking状态（检测结束标签）
+                    if in_thinking:
+                        if re.search(r'</th?ink?>', accumulated_content):
+                            in_thinking = False
+                            # 清除所有thinking标签及其内容
+                            accumulated_content = re.sub(r'<th?ink?[^>]*>.*?</th?ink?>', '', accumulated_content, flags=re.DOTALL)
+                            last_yielded_length = len(accumulated_content)
+
+                    # 只有不在thinking状态时才yield内容
+                    if not in_thinking:
+                        # 计算新增的可见内容
+                        new_content = accumulated_content[last_yielded_length:]
+
+                        if new_content:
+                            is_final_output = (agent_name == "general_agent")
+                            yield {
+                                "type": "delta",
+                                "data": {
+                                    "content": new_content,
+                                    "finish_reason": None,
+                                    "is_final_output": is_final_output
+                                },
+                                "metadata": {
+                                    "agent_name": agent_name,
+                                    "timestamp": self._get_timestamp()
+                                }
+                            }
+                            last_yielded_length = len(accumulated_content)
 
                 # 检查是否完成
                 finish_reason = chunk.choices[0].finish_reason
@@ -526,8 +557,13 @@ class AgentManager:
             complete_content = "".join(full_content)
 
             # 提取JSON响应
-            # 首先移除markdown代码块标记
+            # 首先移除思考标签（thinking models会输出<thinking>...</thinking>）
             json_str = complete_content.strip()
+
+            # 移除 <think>...</think> 或 <thinking>...</thinking> 标签及其内容
+            import re
+            thinking_pattern = r'<th?ink?[^>]*>.*?</th?ink?>'
+            json_str = re.sub(thinking_pattern, '', json_str, flags=re.DOTALL)
 
             # 移除 ```json 和 ``` 标记
             if "```" in json_str:
@@ -638,10 +674,11 @@ AI回复：{response}
             title_response = self.llm.chat.completions.create(
                 model=self.model_name,
                 messages=[
-                    {"role": "user", "content": title_prompt.format(query=query, response=response[:500])}
+                    {"role": "user", "content": title_prompt.format(query=query, response=response[:1000])}
                 ],
-                temperature=0.7,
-                max_tokens=50,
+                temperature=1.0,
+                max_tokens=1000,
+                stream=False,
                 # 关闭推理
                 reasoning_effort='none'
             )
@@ -651,6 +688,16 @@ AI回复：{response}
 
             # 清理可能的引号和多余空格
             title = title.strip('"').strip("'").strip()
+
+            # 清理think和thinking标签（使用与流式输出相同的过滤逻辑）
+            import re
+            # 第一步：移除已闭合的thinking标签及其内容
+            title = re.sub(r'<th?ink?[^>]*>.*?</th?ink?>', '', title, flags=re.DOTALL).strip()
+            # 第二步：处理未闭合的thinking标签（如果在thinking中，移除从标签开始的所有内容）
+            unclosed_match = re.search(r'<th?ink?[^>]*>', title)
+            if unclosed_match:
+                # 有未闭合的标签，只保留标签之前的内容
+                title = title[:unclosed_match.start()].strip()
 
             # 如果生成的标题太长，截断它
             if len(title) > 30:
