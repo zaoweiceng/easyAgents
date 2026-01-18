@@ -8,6 +8,7 @@ from ..agent import Agent
 from ..base_model import Message
 from ..prompt.template_model import PromptTemplate
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -314,7 +315,7 @@ class DemandAgent(Agent):
                     logger.info(f"  → 需求已明确，转交给 general_agent")
                 else:
                     # 信息仍不足，LLM 会返回新的表单配置
-                    message.next_agent = "none"
+                    message.next_agent = "wait_for_user_input"
                     message.message = "需要更多信息，请继续填写"
                     logger.info(f"  → 需要更多信息")
 
@@ -340,8 +341,8 @@ class DemandAgent(Agent):
                     else:
                         logger.warning(f"  - form_config 不是字典: {form_config}")
 
-                    # 需要收集信息
-                    message.next_agent = "none"
+                    # 需要收集信息，暂停等待用户输入
+                    message.next_agent = "wait_for_user_input"
                     message.message = "请您填写以下信息，以便我更好地帮助您"
 
                 elif has_clarified_demand:
@@ -353,7 +354,7 @@ class DemandAgent(Agent):
                     # 未明确返回内容，默认需要收集信息
                     logger.warning(f"  ✗ data 中既没有 form_config 也没有 clarified_demand")
                     logger.warning(f"  ✗ data 的实际键: {list(message.data.keys())}")
-                    message.next_agent = "none"
+                    message.next_agent = "wait_for_user_input"
                     message.message = "请提供更多信息"
             else:
                 logger.warning(f"  ✗ message.data 为 None 或不是字典")

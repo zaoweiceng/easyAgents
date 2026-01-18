@@ -42,7 +42,7 @@ class AgentManager:
         self.end_agent = end_agent_name
         self.max_trys = 3
 
-    def __call__(self, query: str, stream: bool = False, session_id: str = None, context_manager=None) -> Union[list, Generator[Dict[str, Any], None, None]]:
+    def __call__(self, query: str, stream: bool = False, session_id: str = None, context_manager=None, resume_data: Dict = None) -> Union[list, Generator[Dict[str, Any], None, None]]:
         """
         处理用户查询
 
@@ -51,11 +51,19 @@ class AgentManager:
             stream: 是否启用流式响应（默认False）
             session_id: 会话ID（用于获取历史上下文）
             context_manager: 上下文管理器（可选）
+            resume_data: 恢复执行的数据（可选），包含暂停的上下文信息
 
         Returns:
             stream=False: 返回list（原有行为）
             stream=True: 返回Generator[Dict]，yield流式事件
         """
+        # 如果提供了 resume_data，从暂停点恢复执行
+        if resume_data:
+            if stream:
+                return self._stream_call_resume(query, resume_data, session_id, context_manager)
+            else:
+                return self._sync_call_resume(query, resume_data, session_id, context_manager)
+
         # 获取历史上下文
         history_context = []
         if session_id and context_manager:
@@ -220,6 +228,20 @@ class AgentManager:
         }
 
         while True:
+            # 检查是否需要暂停等待用户输入
+            if agent_name == "wait_for_user_input":
+                yield {
+                    "type": "pause",
+                    "data": {
+                        "status": "waiting_for_input",
+                        "reason": "Agent需要等待用户输入",
+                        "context": context,  # 保存当前上下文
+                        "agent_history": thinking_steps  # 保存已执行的agent历史
+                    },
+                    "metadata": {"timestamp": self._get_timestamp()}
+                }
+                break
+
             # 检查是否结束
             if agent_name == "none":
                 yield {
@@ -610,3 +632,330 @@ class AgentManager:
             "content": f"Agent '{agent_name}' 调用失败，终止处理。",
             "message": f"错误信息: {message}"
         }
+
+    def _stream_call_resume(self, query: str, resume_data: Dict, session_id: str = None, context_manager=None) -> Generator[Dict[str, Any], None, None]:
+        """
+        从暂停点恢复流式执行
+
+        Args:
+            query: 用户输入（表单数据）
+            resume_data: 恢复数据，包含暂停的上下文
+            session_id: 会话ID
+            context_manager: 上下文管理器
+
+        Yields:
+            Dict: 流式事件字典
+        """
+        max_trys = self.max_trys
+
+        # 从 resume_data 中恢复状态
+        context = resume_data.get("context", [])
+        thinking_steps = resume_data.get("agent_history", [])
+
+        # 重新开始上一个agent，这次带上用户的表单数据
+        # 找到上一个执行的agent名称（从thinking_steps中获取）
+        if thinking_steps:
+            last_agent_name = thinking_steps[-1]["agent_name"]
+        else:
+            last_agent_name = self.start_agent
+
+        agent_name = last_agent_name
+
+        logger.info(f"[RESUME] 从暂停点恢复执行，上一个agent: {agent_name}")
+
+        # 通知客户端开始恢复执行
+        yield {
+            "type": "metadata",
+            "data": {"status": "resuming", "agent_name": agent_name},
+            "metadata": {"stage": "resume"}
+        }
+
+        # 添加用户消息（表单提交）到上下文
+        context.append(self.__user_message(query))
+
+        # 用于收集完整的响应
+        full_response_content = ""
+
+        try:
+            # 重新执行上一个agent，这次使用表单数据
+            logger.info(f"[RESUME] 重新执行 agent: {agent_name}")
+
+            yield {
+                "type": "agent_start",
+                "data": {
+                    "agent_name": agent_name,
+                    "agent_description": self.agents[agent_name].description,
+                    "agent_status": "processing"
+                },
+                "metadata": {"timestamp": self._get_timestamp()}
+            }
+
+            # 调用agent
+            res = None
+            for event in self._conversation(
+                user_message=str(context),
+                agent_name=agent_name,
+                stream=True
+            ):
+                if event["type"] == "delta":
+                    yield event
+                elif event["type"] == "message":
+                    res = Message(**event["data"]["message"])
+                elif event["type"] == "metadata":
+                    yield event
+                elif event["type"] == "error":
+                    yield event
+                    res = Message(
+                        status="error",
+                        task_list=[],
+                        data=None,
+                        next_agent="none",
+                        agent_selection_reason="错误",
+                        message=event["data"].get("error_message", "未知错误")
+                    )
+                    break
+
+            if res is None:
+                raise Exception("未收到完整响应")
+
+            # Agent结束事件
+            yield {
+                "type": "agent_end",
+                "data": {
+                    "agent_name": agent_name,
+                    "status": res.status,
+                    "next_agent": res.next_agent,
+                    "agent_selection_reason": res.agent_selection_reason,
+                    "task_list": res.task_list
+                },
+                "metadata": {"timestamp": self._get_timestamp()}
+            }
+
+            # 收集完整响应
+            full_response_content += f"## {agent_name}\n"
+            full_response_content += f"Reason: {res.agent_selection_reason}\n"
+            if res.message:
+                full_response_content += f"Message: {res.message}\n"
+            if res.data:
+                if hasattr(res.data, 'answer') and res.data.answer:
+                    full_response_content += f"Answer: {res.data.answer}\n"
+                elif isinstance(res.data, dict) and res.data.get('answer'):
+                    full_response_content += f"Answer: {res.data['answer']}\n"
+            full_response_content += "\n"
+
+            # 更新thinking steps（替换最后一个）
+            if agent_name != "entrance_agent" and agent_name != "general_agent":
+                thinking_steps[-1] = {
+                    "agent_name": agent_name,
+                    "reason": res.agent_selection_reason,
+                    "task": res.task_list[0] if res.task_list else None
+                }
+
+            # 完整Message事件
+            yield {
+                "type": "message",
+                "data": {"message": res.model_dump()},
+                "metadata": {"agent_name": agent_name}
+            }
+
+            if res.status != "success":
+                logger.error(f"Agent '{agent_name}' 返回错误状态: {res.message}")
+                # 保存到上下文管理器
+                if session_id and context_manager:
+                    self._save_to_context_manager(session_id, context_manager, context, full_response_content, thinking_steps)
+                return
+
+            # 更新context，继续agent链
+            query_data = {
+                "task_list": res.task_list,
+                "data": res.data
+            }
+            context.append(self.__system_message(
+                content=json.dumps(query_data, ensure_ascii=False),
+                message=res.message
+            ))
+            agent_name = res.next_agent
+
+            # 继续执行剩余的agent链
+            while True:
+                # 检查是否需要暂停
+                if agent_name == "wait_for_user_input":
+                    yield {
+                        "type": "pause",
+                        "data": {
+                            "status": "waiting_for_input",
+                            "reason": "Agent需要等待用户输入",
+                            "context": context,
+                            "agent_history": thinking_steps
+                        },
+                        "metadata": {"timestamp": self._get_timestamp()}
+                    }
+                    break
+
+                # 检查是否结束
+                if agent_name == "none":
+                    yield {
+                        "type": "metadata",
+                        "data": {"status": "completed"},
+                        "metadata": {"stage": "end"}
+                    }
+                    break
+
+                try:
+                    # Agent开始事件
+                    logger.info(f"[STREAM] Yielding agent_start for {agent_name}")
+                    yield {
+                        "type": "agent_start",
+                        "data": {
+                            "agent_name": agent_name,
+                            "agent_description": self.agents[agent_name].description,
+                            "agent_status": "processing"
+                        },
+                        "metadata": {"timestamp": self._get_timestamp()}
+                    }
+
+                    # 流式conversation
+                    res = None
+                    for event in self._conversation(
+                        user_message=str(context),
+                        agent_name=agent_name,
+                        stream=True
+                    ):
+                        if event["type"] == "delta":
+                            yield event
+                        elif event["type"] == "message":
+                            res = Message(**event["data"]["message"])
+                        elif event["type"] == "metadata":
+                            yield event
+                        elif event["type"] == "error":
+                            yield event
+                            res = Message(
+                                status="error",
+                                task_list=[],
+                                data=None,
+                                next_agent="none",
+                                agent_selection_reason="错误",
+                                message=event["data"].get("error_message", "未知错误")
+                            )
+                            break
+
+                    if res is None:
+                        raise Exception("未收到完整响应")
+
+                    # Agent结束事件
+                    yield {
+                        "type": "agent_end",
+                        "data": {
+                            "agent_name": agent_name,
+                            "status": res.status,
+                            "next_agent": res.next_agent,
+                            "agent_selection_reason": res.agent_selection_reason,
+                            "task_list": res.task_list
+                        },
+                        "metadata": {"timestamp": self._get_timestamp()}
+                    }
+
+                    # 收集完整响应
+                    full_response_content += f"## {agent_name}\n"
+                    full_response_content += f"Reason: {res.agent_selection_reason}\n"
+                    if res.message:
+                        full_response_content += f"Message: {res.message}\n"
+                    if res.data:
+                        if hasattr(res.data, 'answer') and res.data.answer:
+                            full_response_content += f"Answer: {res.data.answer}\n"
+                        elif isinstance(res.data, dict) and res.data.get('answer'):
+                            full_response_content += f"Answer: {res.data['answer']}\n"
+                    full_response_content += "\n"
+
+                    # 收集thinking steps
+                    if agent_name != "entrance_agent" and agent_name != "general_agent":
+                        thinking_steps.append({
+                            "agent_name": agent_name,
+                            "reason": res.agent_selection_reason,
+                            "task": res.task_list[0] if res.task_list else None
+                        })
+
+                    # 完整Message事件
+                    yield {
+                        "type": "message",
+                        "data": {"message": res.model_dump()},
+                        "metadata": {"agent_name": agent_name}
+                    }
+
+                    if res.status != "success":
+                        logger.error(f"Agent '{agent_name}' 返回错误状态: {res.message}")
+                        break
+
+                    # 更新context
+                    query_data = {
+                        "task_list": res.task_list,
+                        "data": res.data
+                    }
+                    context.append(self.__system_message(
+                        content=json.dumps(query_data, ensure_ascii=False),
+                        message=res.message
+                    ))
+                    agent_name = res.next_agent
+                    max_trys = self.max_trys
+
+                except Exception as e:
+                    logger.error(f"调用 Agent '{agent_name}' 失败: {e}")
+                    yield {
+                        "type": "error",
+                        "data": {
+                            "error_message": str(e),
+                            "agent_name": agent_name,
+                            "recoverable": True
+                        }
+                    }
+                    max_trys -= 1
+                    if max_trys <= 0:
+                        break
+                    continue
+
+            # 保存到上下文管理器
+            if session_id and context_manager:
+                self._save_to_context_manager(session_id, context_manager, context, full_response_content, thinking_steps)
+
+        except Exception as e:
+            logger.error(f"恢复执行失败: {e}")
+            yield {
+                "type": "error",
+                "data": {
+                    "error_message": str(e),
+                    "agent_name": agent_name,
+                    "recoverable": False
+                }
+            }
+
+    def _save_to_context_manager(self, session_id: str, context_manager, context: List, full_response: str, thinking_steps: list):
+        """保存到上下文管理器的辅助方法"""
+        ctx = context_manager.get_or_create_context(session_id)
+        # 提取general_agent的最终答案
+        final_answer = ""
+        for msg in reversed(context):
+            if msg.get("role") == "system" and msg.get("content"):
+                try:
+                    content_obj = json.loads(msg["content"])
+                    data = content_obj.get("data")
+                    if data:
+                        if hasattr(data, 'answer') and data.answer:
+                            final_answer = data.answer
+                            break
+                        elif isinstance(data, dict) and data.get('answer'):
+                            final_answer = data['answer']
+                            break
+                except:
+                    pass
+
+        # 保存用户消息（从context中提取最后一个用户消息）
+        for msg in reversed(context):
+            if msg.get("role") == "user":
+                ctx.add_user_message(msg["content"])
+                break
+
+        ctx.add_assistant_message(
+            full_response=full_response,
+            final_answer=final_answer,
+            thinking_steps=thinking_steps
+        )

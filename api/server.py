@@ -335,11 +335,15 @@ async def chat_stream(request: ChatRequest):
     full_response_content = ""
     response_events = []
     collected_events = []  # 收集所有事件用于保存到数据库
+    paused = False  # 标记是否进入暂停状态
 
     async def generate():
         """生成SSE事件流"""
-        nonlocal full_response_content, response_events, collected_events
+        nonlocal full_response_content, response_events, collected_events, paused
         try:
+            # 首先发送 session_id（如果前端还没有）
+            yield f"data: {json.dumps({'type': 'metadata', 'data': {'session_id': session_id}}, ensure_ascii=False)}\n\n"
+
             # 流式调用AgentManager，传递session_id和context_manager
             for event in agent_manager(
                 request.query,
@@ -349,6 +353,17 @@ async def chat_stream(request: ChatRequest):
             ):
                 # 收集事件用于保存
                 response_events.append(event)
+
+                # 处理暂停事件
+                if event.get("type") == "pause":
+                    logger.info(f"收到暂停事件，保存上下文到数据库")
+                    # 保存暂停上下文到数据库
+                    pause_data = event.get("data", {})
+                    db.save_paused_context(session_id, pause_data)
+                    paused = True
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    # 暂停时不发送 [DONE]
+                    return
 
                 # 收集agent_start和agent_end事件
                 if event.get("type") in ["agent_start", "agent_end"]:
@@ -371,22 +386,24 @@ async def chat_stream(request: ChatRequest):
             # 发送完成标记
             yield "data: [DONE]\n\n"
 
-            # 保存助手消息（在流结束后）
+            # 保存助手消息（在流结束后，且未暂停时）
             try:
-                # 构造消息数据
-                msg_data = None
-                for event in response_events:
-                    if event.get("type") == "message":
-                        msg_data = event.get("data", {}).get("message")
-                        break
+                # 只有在未暂停时才保存消息
+                if not paused:
+                    # 构造消息数据
+                    msg_data = None
+                    for event in response_events:
+                        if event.get("type") == "message":
+                            msg_data = event.get("data", {}).get("message")
+                            break
 
-                db.add_message(
-                    conversation_id=conv['id'],
-                    role='assistant',
-                    content=full_response_content,
-                    data=msg_data,
-                    events=collected_events if collected_events else None
-                )
+                    db.add_message(
+                        conversation_id=conv['id'],
+                        role='assistant',
+                        content=full_response_content,
+                        data=msg_data,
+                        events=collected_events if collected_events else None
+                    )
             except Exception as save_error:
                 logger.error(f"保存流式消息失败: {save_error}")
 
@@ -410,6 +427,140 @@ async def chat_stream(request: ChatRequest):
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no"  # 禁用nginx缓冲
+        }
+    )
+
+
+@app.post("/chat/stream/resume", tags=["聊天"])
+async def chat_stream_resume(request: ChatRequest):
+    """
+    恢复流式聊天接口（SSE）
+
+    从暂停点继续执行agent链，并以Server-Sent Events (SSE)格式流式返回响应
+
+    事件类型：
+    - metadata: 元数据信息
+    - agent_start: Agent开始处理
+    - delta: LLM增量内容
+    - agent_end: Agent结束处理
+    - message: 完整Message对象
+    - error: 错误信息
+    """
+    if agent_manager is None:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+
+    db = get_db()
+
+    # 验证session_id
+    if not request.session_id:
+        raise HTTPException(status_code=400, detail="必须提供session_id")
+
+    session_id = request.session_id
+
+    # 检查是否有暂停的上下文
+    paused_context = db.get_paused_context(session_id)
+    if not paused_context:
+        raise HTTPException(status_code=404, detail="未找到暂停的上下文")
+
+    logger.info(f"恢复会话 {session_id} 的执行")
+
+    # 用于收集流式响应内容
+    full_response_content = ""
+    response_events = []
+    collected_events = []
+    paused = False
+
+    async def generate():
+        """生成SSE事件流"""
+        nonlocal full_response_content, response_events, collected_events, paused
+        try:
+            # 流式调用AgentManager的恢复执行方法
+            for event in agent_manager(
+                request.query,  # 这里是用户提交的表单数据
+                stream=True,
+                session_id=session_id,
+                context_manager=context_manager,
+                resume_data=paused_context  # 传入暂停的上下文
+            ):
+                # 收集事件用于保存
+                response_events.append(event)
+
+                # 处理暂停事件
+                if event.get("type") == "pause":
+                    logger.info(f"再次收到暂停事件，更新上下文到数据库")
+                    pause_data = event.get("data", {})
+                    db.save_paused_context(session_id, pause_data)
+                    paused = True
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    return
+
+                # 收集agent_start和agent_end事件
+                if event.get("type") in ["agent_start", "agent_end"]:
+                    collected_events.append(event)
+
+                # 收集delta内容
+                if event.get("type") == "delta":
+                    full_response_content += event.get("data", {}).get("content", "")
+
+                # 转换为SSE格式
+                sse_data = f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+                # 立即yield，确保数据立即发送
+                yield sse_data
+
+                # 强制flush
+                await asyncio.sleep(0)
+
+            # 发送完成标记
+            yield "data: [DONE]\n\n"
+
+            # 保存助手消息（在流结束后，且未暂停时）
+            try:
+                # 只有在未暂停时才保存消息
+                if not paused:
+                    # 构造消息数据
+                    msg_data = None
+                    for event in response_events:
+                        if event.get("type") == "message":
+                            msg_data = event.get("data", {}).get("message")
+                            break
+
+                    # 获取conversation_id
+                    conv = db.get_conversation_by_session(session_id)
+                    if conv:
+                        db.add_message(
+                            conversation_id=conv['id'],
+                            role='assistant',
+                            content=full_response_content,
+                            data=msg_data,
+                            events=collected_events if collected_events else None
+                        )
+
+                        # 清除暂停上下文
+                        db.clear_paused_context(session_id)
+            except Exception as save_error:
+                logger.error(f"保存恢复后的消息失败: {save_error}")
+
+        except Exception as e:
+            logger.error(f"恢复流式聊天处理失败: {e}")
+            # 发送错误事件
+            error_event = {
+                "type": "error",
+                "data": {
+                    "error_message": str(e),
+                    "error_type": type(e).__name__
+                },
+                "metadata": {}
+            }
+            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
         }
     )
 

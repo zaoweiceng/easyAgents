@@ -5,7 +5,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { flushSync } from 'react-dom';
-import { chatSync, chatStream } from '../services/api';
+import { chatSync, chatStream, chatStreamResume } from '../services/api';
 
 // 辅助函数：从JSON对象中提取agent名称
 function extractAgentName(jsonObj) {
@@ -23,6 +23,7 @@ export const useChat = (initialSessionId = null) => {
   const [currentAgent, setCurrentAgent] = useState(null);
   const [error, setError] = useState(null);
   const [sessionId, setSessionId] = useState(initialSessionId);
+  const [isPaused, setIsPaused] = useState(false);  // 标记是否处于暂停状态
   const currentMessageRef = useRef(null);  // 引用当前正在累积的消息对象
   const thinkingStepsRef = useRef([]);  // 使用ref来始终获取最新的thinking steps
 
@@ -80,6 +81,7 @@ export const useChat = (initialSessionId = null) => {
     setIsLoading(true);
     setError(null);
     setCurrentAgent(null);
+    setIsPaused(false);  // 重置暂停状态
     thinkingStepsRef.current = [];  // 重置思考步骤
 
     // 用于累积general_agent的原始JSON内容
@@ -259,6 +261,35 @@ export const useChat = (initialSessionId = null) => {
               }
             }
           },
+          onPause: (data) => {
+            // 处理暂停事件
+            console.log('收到暂停事件:', data);
+            setIsPaused(true);
+            setIsLoading(false);
+            if (currentMessageRef.current) {
+              currentMessageRef.current.isThinkingComplete = true;
+              currentMessageRef.current.pausedContext = data;  // 保存暂停上下文
+
+              // 从暂停上下文中提取表单配置
+              // 暂停上下文中包含了整个 context，我们需要找到最后一条包含 form_config 的消息
+              if (data.context && data.context.length > 0) {
+                for (let i = data.context.length - 1; i >= 0; i--) {
+                  const msg = data.context[i];
+                  if (msg.data && msg.data.form_config) {
+                    currentMessageRef.current.data = msg.data;
+                    break;
+                  }
+                }
+              }
+            }
+          },
+          onMetadata: (data) => {
+            // 处理元数据，包括 session_id
+            if (data.session_id && !sessionId) {
+              console.log('收到 session_id:', data.session_id);
+              setSessionId(data.session_id);
+            }
+          },
           onError: (data) => {
             setError(data.error_message);
             setMessages((prev) => [
@@ -272,6 +303,199 @@ export const useChat = (initialSessionId = null) => {
               currentMessageRef.current.isThinkingComplete = true;
             }
             // 不立即清空agent状态，让用户看到完整的agent信息
+          },
+        },
+        sessionId
+      );
+    } catch (err) {
+      setError(err.message);
+      setIsLoading(false);
+    }
+  }, [sessionId]);
+
+  /**
+   * 提交表单并恢复执行（从暂停点继续）
+   */
+  const submitFormAndResume = useCallback(async (formData) => {
+    if (!sessionId) {
+      setError('无法恢复执行：缺少会话ID');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setIsPaused(false);  // 重置暂停状态
+
+    // 用于累积general_agent的原始JSON内容
+    const rawContentRef = { current: '' };
+
+    // 不添加新的用户消息，直接继续当前消息
+    setMessages((prev) => {
+      const lastMessage = prev[prev.length - 1];
+      if (lastMessage && lastMessage.role === 'assistant') {
+        // 标记表单为已提交，继续更新当前消息
+        const updatedMessage = {
+          ...lastMessage,
+          isFormSubmitted: true,
+          isThinkingComplete: false  // 继续思考
+        };
+        currentMessageRef.current = updatedMessage;
+        return [...prev.slice(0, -1), updatedMessage];
+      }
+      return prev;
+    });
+
+    try {
+      await chatStreamResume(
+        JSON.stringify(formData),
+        {
+          onDelta: (data) => {
+            // 与 sendStreamMessage 相同的处理逻辑
+            if (data.content && typeof data.content === 'string') {
+              if (data.is_final_output && currentMessageRef.current) {
+                rawContentRef.current += data.content;
+
+                try {
+                  const content = rawContentRef.current;
+                  const answerKeyIndex = content.indexOf('"answer"');
+                  if (answerKeyIndex !== -1) {
+                    const colonIndex = content.indexOf(':', answerKeyIndex);
+                    if (colonIndex !== -1) {
+                      const firstQuoteIndex = content.indexOf('"', colonIndex);
+                      if (firstQuoteIndex !== -1) {
+                        let answerText = '';
+                        let i = firstQuoteIndex + 1;
+                        let inEscape = false;
+
+                        while (i < content.length) {
+                          const char = content[i];
+                          if (inEscape) {
+                            if (char === 'n') answerText += '\n';
+                            else if (char === 't') answerText += '\t';
+                            else if (char === 'r') answerText += '\r';
+                            else if (char === '\\') answerText += '\\';
+                            else if (char === '"') answerText += '"';
+                            else answerText += char;
+                            inEscape = false;
+                          } else if (char === '\\') {
+                            inEscape = true;
+                          } else if (char === '"') {
+                            break;
+                          } else {
+                            answerText += char;
+                          }
+                          i++;
+                        }
+
+                        if (answerText || currentMessageRef.current.content) {
+                          currentMessageRef.current.content = answerText;
+                          flushSync(() => {
+                            setMessages((prev) => [...prev]);
+                          });
+                        }
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.debug('JSON解析中...', e.message);
+                }
+              }
+            }
+          },
+          onAgentStart: (data) => {
+            // 添加到思考步骤
+            const step = {
+              agent_name: data.agent_name,
+              reason: null,
+              task: null
+            };
+            thinkingStepsRef.current.push(step);
+
+            if (currentMessageRef.current) {
+              currentMessageRef.current.thinkingSteps = [...thinkingStepsRef.current];
+              flushSync(() => {
+                setMessages((prev) => [...prev]);
+                setCurrentAgent(data);
+              });
+            }
+          },
+          onAgentEnd: (data) => {
+            const lastStep = thinkingStepsRef.current[thinkingStepsRef.current.length - 1];
+            if (lastStep && lastStep.agent_name === data.agent_name) {
+              if (data.agent_selection_reason) {
+                lastStep.reason = data.agent_selection_reason;
+              }
+              if (data.task_list && data.task_list.length > 0) {
+                lastStep.task = data.task_list[0];
+              }
+
+              if (currentMessageRef.current) {
+                currentMessageRef.current.thinkingSteps = [...thinkingStepsRef.current];
+                flushSync(() => {
+                  setMessages((prev) => [...prev]);
+                });
+              }
+            }
+          },
+          onMessage: (data) => {
+            if (data.message) {
+              const message = data.message;
+              const lastStep = thinkingStepsRef.current[thinkingStepsRef.current.length - 1];
+              if (lastStep) {
+                if (message.agent_selection_reason) {
+                  lastStep.reason = message.agent_selection_reason;
+                }
+                if (message.task_list && message.task_list.length > 0) {
+                  lastStep.task = message.task_list[0];
+                }
+
+                if (currentMessageRef.current) {
+                  currentMessageRef.current.thinkingSteps = [...thinkingStepsRef.current];
+
+                  const hasFormConfig = message.data && message.data.form_config;
+                  if (hasFormConfig) {
+                    currentMessageRef.current.content = '';
+                    currentMessageRef.current.data = message.data;
+                  } else if (message.data && message.data.answer) {
+                    currentMessageRef.current.data = message.data;
+                  }
+
+                  flushSync(() => {
+                    setMessages((prev) => [...prev]);
+                  });
+                }
+              }
+            }
+          },
+          onPause: (data) => {
+            console.log('再次收到暂停事件:', data);
+            setIsPaused(true);
+            setIsLoading(false);
+            if (currentMessageRef.current) {
+              currentMessageRef.current.isThinkingComplete = true;
+              currentMessageRef.current.pausedContext = data;
+              // 更新表单配置
+              if (data.context && data.context.length > 0) {
+                const lastMsg = data.context[data.context.length - 1];
+                if (lastMsg.data && lastMsg.data.form_config) {
+                  currentMessageRef.current.data = lastMsg.data;
+                  currentMessageRef.current.isFormSubmitted = false;
+                }
+              }
+            }
+          },
+          onError: (data) => {
+            setError(data.error_message);
+            setMessages((prev) => [
+              ...prev,
+              { role: 'error', content: `错误: ${data.error_message}` },
+            ]);
+          },
+          onDone: () => {
+            setIsLoading(false);
+            if (currentMessageRef.current) {
+              currentMessageRef.current.isThinkingComplete = true;
+            }
           },
         },
         sessionId
@@ -402,8 +626,10 @@ export const useChat = (initialSessionId = null) => {
     currentAgent,
     error,
     sessionId,
+    isPaused,
     sendSyncMessage,
     sendStreamMessage,
+    submitFormAndResume,
     clearMessages,
     loadConversation,
     setSessionId: setSessionIdFromOutside,

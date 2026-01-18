@@ -32,7 +32,8 @@ class DatabaseService:
                     message_count INTEGER DEFAULT 0,
                     is_pinned BOOLEAN DEFAULT 0,
                     model_name TEXT,
-                    total_tokens INTEGER DEFAULT 0
+                    total_tokens INTEGER DEFAULT 0,
+                    paused_context TEXT
                 )
             """)
 
@@ -269,6 +270,63 @@ class DatabaseService:
             "messages": messages,
             "exported_at": datetime.now().isoformat()
         }
+
+    # 暂停上下文相关方法
+    def save_paused_context(
+        self,
+        session_id: str,
+        paused_context: Dict
+    ) -> bool:
+        """保存暂停的上下文（用于恢复执行）"""
+        with self._lock:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """
+                    UPDATE conversations
+                    SET paused_context = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE session_id = ?
+                    """,
+                    (json.dumps(paused_context, ensure_ascii=False), session_id)
+                )
+                conn.commit()
+                return True
+
+    def get_paused_context(
+        self,
+        session_id: str
+    ) -> Optional[Dict]:
+        """获取暂停的上下文"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT paused_context FROM conversations WHERE session_id = ?",
+                (session_id,)
+            )
+            row = cursor.fetchone()
+            if row and row['paused_context']:
+                try:
+                    return json.loads(row['paused_context'])
+                except json.JSONDecodeError:
+                    return None
+            return None
+
+    def clear_paused_context(
+        self,
+        session_id: str
+    ) -> bool:
+        """清除暂停的上下文"""
+        with self._lock:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """
+                    UPDATE conversations
+                    SET paused_context = NULL
+                    WHERE session_id = ?
+                    """,
+                    (session_id,)
+                )
+                conn.commit()
+                return True
 
 
 # 全局数据库实例

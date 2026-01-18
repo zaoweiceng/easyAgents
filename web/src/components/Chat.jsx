@@ -8,7 +8,6 @@ import { SettingsModal } from './SettingsModal';
 import { AgentModal } from './AgentModal';
 import { ThinkingProcess } from './ThinkingProcess';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { FormComponent } from './FormComponent';
 import './Chat.css';
 
 export const Chat = ({
@@ -32,6 +31,7 @@ export const Chat = ({
     sessionId,
     sendSyncMessage,
     sendStreamMessage,
+    submitFormAndResume,
     clearMessages,
     loadConversation,
     setSessionId,
@@ -119,44 +119,41 @@ export const Chat = ({
             <p>请输入您的问题，AI助手将为您解答</p>
           </div>
         ) : (
-          messages.map((msg, index) => (
-            <div key={index} className={`message message-${msg.role}`}>
-              {/* Thinking Process - 只在assistant消息且有thinkingSteps时显示 */}
-              {msg.role === 'assistant' && msg.thinkingSteps && msg.thinkingSteps.length > 0 && (
-                <ThinkingProcess
-                  steps={msg.thinkingSteps}
-                  isProcessing={!msg.isThinkingComplete && isLoading}
-                />
-              )}
+          messages.map((msg, index) => {
+            // 如果消息是用户提交的表单数据（内部消息），不显示
+            if (msg.role === 'user' && msg.content && msg.content.startsWith('{"type":"form_submission"')) {
+              return null;
+            }
 
-              {/* Form Component - 如果消息包含表单配置 */}
-              {msg.data && msg.data.form_config && (
-                <FormComponent
-                  formConfig={msg.data.form_config}
-                  onSubmit={async (formData) => {
-                    // 提交表单数据
-                    const query = JSON.stringify({
-                      type: 'form_submission',
-                      form_values: formData,
-                      original_demand: msg.data.user_demand || ''
-                    });
-                    if (settings.chatMode === 'sync') {
-                      await sendSyncMessage(query);
-                    } else {
-                      await sendStreamMessage(query);
-                    }
-                  }}
-                />
-              )}
+            return (
+              <div key={index} className={`message message-${msg.role}`}>
+                {/* Thinking Process - 只在assistant消息且有thinkingSteps时显示 */}
+                {msg.role === 'assistant' && msg.thinkingSteps && msg.thinkingSteps.length > 0 && (
+                  <ThinkingProcess
+                    steps={msg.thinkingSteps}
+                    isProcessing={!msg.isThinkingComplete && isLoading}
+                    formConfig={msg.data?.form_config}
+                    onFormSubmit={async (formData) => {
+                      const formDataWithDemand = {
+                        type: 'form_submission',
+                        form_values: formData,
+                        original_demand: msg.data?.user_demand || ''
+                      };
+                      await submitFormAndResume(formDataWithDemand);
+                    }}
+                    isFormSubmitted={msg.isFormSubmitted}
+                  />
+                )}
 
-              {/* Message Content */}
-              {msg.content && (
-                <div className="message-content">
-                  <MarkdownRenderer content={msg.content} />
-                </div>
-              )}
-            </div>
-          ))
+                {/* Message Content */}
+                {msg.content && (
+                  <div className="message-content">
+                    <MarkdownRenderer content={msg.content} />
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
 
         {isLoading && !currentAgent && (

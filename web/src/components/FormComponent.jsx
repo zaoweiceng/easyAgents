@@ -6,11 +6,17 @@ import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import './FormComponent.css';
 
-export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
+export const FormComponent = ({ formConfig, onSubmit, onCancel, disabled = false }) => {
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  // 计算是否应该禁用（在组件顶层，这样所有地方都能访问）
+  const isDisabled = disabled || isSubmitted;
 
   const handleChange = (fieldName, value) => {
+    if (isDisabled) return;  // 禁用或已提交时不允许修改
+
     setFormData(prev => ({
       ...prev,
       [fieldName]: value
@@ -25,6 +31,8 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
   };
 
   const handleTableChange = (fieldName, rowIndex, columnField, value) => {
+    if (isDisabled) return;  // 禁用或已提交时不允许修改
+
     setFormData(prev => ({
       ...prev,
       [fieldName]: prev[fieldName].map((row, idx) =>
@@ -34,6 +42,8 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
   };
 
   const addTableRow = (fieldName) => {
+    if (isDisabled) return;  // 禁用或已提交时不允许修改
+
     const field = formConfig.fields.find(f => f.field_name === fieldName);
     if (!field) return;
 
@@ -53,6 +63,8 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
   };
 
   const removeTableRow = (fieldName, rowIndex) => {
+    if (isDisabled) return;  // 禁用或已提交时不允许修改
+
     const field = formConfig.fields.find(f => f.field_name === fieldName);
     if (!field) return;
 
@@ -91,13 +103,17 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
 
+    if (isDisabled) return;  // 禁用或已提交时不允许提交
+
     if (validateForm()) {
+      setIsSubmitted(true);
       onSubmit(formData);
     }
   };
 
   const renderField = (field) => {
     const value = formData[field.field_name] || '';
+    // isDisabled 已经在组件顶层定义
 
     switch (field.field_type) {
       case 'radio':
@@ -116,6 +132,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
                     value={option}
                     checked={value === option}
                     onChange={(e) => handleChange(field.field_name, e.target.value)}
+                    disabled={isDisabled}
                   />
                   <span>{option}</span>
                 </label>
@@ -148,6 +165,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
                         handleChange(field.field_name, currentValues.filter(v => v !== option));
                       }
                     }}
+                    disabled={isDisabled}
                   />
                   <span>{option}</span>
                 </label>
@@ -172,6 +190,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
               onChange={(e) => handleChange(field.field_name, e.target.value)}
               placeholder={field.placeholder || ''}
               rows={4}
+              disabled={isDisabled}
             />
             {errors[field.field_name] && (
               <span className="error-message">{errors[field.field_name]}</span>
@@ -192,6 +211,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
               value={value}
               onChange={(e) => handleChange(field.field_name, e.target.value)}
               placeholder={field.placeholder || ''}
+              disabled={isDisabled}
             />
             {errors[field.field_name] && (
               <span className="error-message">{errors[field.field_name]}</span>
@@ -210,6 +230,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
               className="select-input"
               value={value}
               onChange={(e) => handleChange(field.field_name, e.target.value)}
+              disabled={isDisabled}
             >
               <option value="">请选择...</option>
               {field.options.map((option, idx) => (
@@ -256,6 +277,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
                                 e.target.value
                               )}
                               className="table-cell-input"
+                              disabled={isDisabled}
                             />
                           ) : (
                             <input
@@ -268,6 +290,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
                                 e.target.value
                               )}
                               className="table-cell-input"
+                              disabled={isDisabled}
                             />
                           )}
                         </td>
@@ -277,7 +300,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
                           type="button"
                           className="icon-button"
                           onClick={() => removeTableRow(field.field_name, rowIndex)}
-                          disabled={tableData.length <= (field.min_rows || 1)}
+                          disabled={tableData.length <= (field.min_rows || 1) || isDisabled}
                           title="删除此行"
                         >
                           <Trash2 size={16} />
@@ -291,7 +314,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
                 type="button"
                 className="add-row-button"
                 onClick={() => addTableRow(field.field_name)}
-                disabled={tableData.length >= (field.max_rows || 10)}
+                disabled={tableData.length >= (field.max_rows || 10) || isDisabled}
               >
                 <Plus size={16} />
                 添加行
@@ -316,6 +339,7 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
               value={value}
               onChange={(e) => handleChange(field.field_name, e.target.value)}
               placeholder={field.placeholder || ''}
+              disabled={isDisabled}
             />
             {errors[field.field_name] && (
               <span className="error-message">{errors[field.field_name]}</span>
@@ -336,11 +360,11 @@ export const FormComponent = ({ formConfig, onSubmit, onCancel }) => {
       <form onSubmit={handleSubmit} className="dynamic-form">
         {formConfig.fields.map(field => renderField(field))}
         <div className="form-actions">
-          <button type="submit" className="submit-button">
-            提交
+          <button type="submit" className="submit-button" disabled={isDisabled}>
+            {isSubmitted ? '已提交' : '提交'}
           </button>
           {onCancel && (
-            <button type="button" className="cancel-button" onClick={onCancel}>
+            <button type="button" className="cancel-button" onClick={onCancel} disabled={isDisabled}>
               取消
             </button>
           )}
