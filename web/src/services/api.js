@@ -39,6 +39,24 @@ export const getAgent = async (agentName) => {
 };
 
 /**
+ * 重载所有Agent插件（热插拔）
+ */
+export const reloadAgents = async () => {
+  const response = await fetch(`${API_BASE_URL}/agents/reload`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('重载Agent失败');
+  }
+
+  return response.json();
+};
+
+/**
  * 同步聊天
  */
 export const chatSync = async (query, sessionId = null) => {
@@ -280,6 +298,7 @@ export default {
   healthCheck,
   getAgents,
   getAgent,
+  reloadAgents,
   chatSync,
   chatStream,
 };

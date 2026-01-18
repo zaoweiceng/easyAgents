@@ -65,6 +65,71 @@ class pluginManager:
                 except (ImportError, AttributeError, ValueError) as e:
                     logger.error(f"✗ 加载插件 '{filename}' 失败: {e}")
 
+    def reload_plugins(self) -> int:
+        """
+        重新加载所有插件（支持热插拔）
+
+        Returns:
+            int: 成功加载的Agent数量
+
+        这个方法会：
+        1. 清除所有已加载的插件Agent（保留内置Agent）
+        2. 重新扫描plugin目录
+        3. 加载所有Agent文件
+        """
+        logger.info("🔄 开始重新加载插件...")
+
+        # 保存内置Agent
+        builtin_agents = {}
+        for agent_name in ["entrance_agent", "general_agent", "demand_agent"]:
+            agent = self.agent_loader.get_agent(agent_name)
+            if agent:
+                builtin_agents[agent_name] = agent
+
+        # 保存MCP Agent（通过类型判断）
+        mcp_agents = {}
+        for agent_name, agent in self.agent_loader.get_all_agents().items():
+            # 检查是否是MCPAgent或MultiMCPAgent的实例
+            from .agents.mcp_agent import MCPAgent, MultiMCPAgent
+            if isinstance(agent, (MCPAgent, MultiMCPAgent)):
+                mcp_agents[agent_name] = agent
+
+        # 清空所有Agent
+        self.agent_loader = AgentLoader()
+
+        # 恢复内置Agent
+        for name, agent in builtin_agents.items():
+            self.agent_loader.add_agent(agent)
+            logger.info(f"✓ 恢复内置Agent: {name}")
+
+        # 恢复MCP Agent
+        for name, agent in mcp_agents.items():
+            self.agent_loader.add_agent(agent)
+            logger.info(f"✓ 恢复MCP Agent: {name}")
+
+        # 重新加载插件
+        plugin_count = 0
+        if not os.path.isdir(self.plugin_src):
+            logger.warning(f"插件目录 '{self.plugin_src}' 不存在或不是一个目录")
+        else:
+            for filename in os.listdir(self.plugin_src):
+                if filename.endswith(".py") and not filename.startswith("__"):
+                    logger.info(f"加载 Agent 文件: {filename}")
+                    filepath = os.path.join(self.plugin_src, filename)
+                    class_name = filename_to_classname(filename)
+                    try:
+                        cls = load_class_from_file(filepath, class_name)
+                        if issubclass(cls, Agent):
+                            agent_instance = cls()
+                            self.agent_loader.add_agent(agent_instance)
+                            logger.info(f"✓ 成功加载Agent: {agent_instance.name}")
+                            plugin_count += 1
+                    except (ImportError, AttributeError, ValueError) as e:
+                        logger.error(f"✗ 加载插件 '{filename}' 失败: {e}")
+
+        logger.info(f"✅ 插件重新加载完成，共加载 {plugin_count} 个插件Agent")
+        return plugin_count
+
     def load_mcp_agents(self) -> None:
         """加载MCP Agent"""
         if not self.mcp_configs:

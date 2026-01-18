@@ -252,6 +252,50 @@ async def get_agent_info(agent_name: str):
     }
 
 
+@app.post("/agents/reload", tags=["Agent"])
+async def reload_agents():
+    """
+    重新加载所有插件Agent（支持热插拔）
+
+    无需重启服务即可加载新添加的Agent或移除已删除的Agent。
+    这个操作会：
+    1. 保留所有内置Agent（entrance_agent, general_agent, demand_agent）
+    2. 保留所有MCP Agent
+    3. 重新扫描plugin目录并加载所有Agent文件
+
+    Returns:
+        重载结果，包括加载的Agent数量和列表
+    """
+    if agent_manager is None:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+
+    try:
+        # 调用pluginManager的reload_plugins方法
+        plugin_count = agent_manager.agents.reload_plugins()
+
+        # 获取更新后的Agent列表
+        agents_info = json.loads(agent_manager.agents.to_string())
+        available_agents = agents_info.get('available_agents', {})
+
+        # 提取插件Agent名称（排除内置和MCP Agent）
+        builtin_agents = {'entrance_agent', 'general_agent', 'demand_agent'}
+        plugin_agent_names = [
+            name for name in available_agents.keys()
+            if name not in builtin_agents and not name.startswith('mcp_')
+        ]
+
+        return {
+            "status": "success",
+            "message": f"成功重新加载 {plugin_count} 个插件Agent",
+            "plugin_count": plugin_count,
+            "plugin_agents": plugin_agent_names,
+            "total_agents": len(available_agents)
+        }
+    except Exception as e:
+        logger.error(f"重载插件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"重载插件失败: {str(e)}")
+
+
 # ============================================================================
 # 聊天接口
 # ============================================================================

@@ -2,15 +2,17 @@
  * Agent Modal - 显示当前Agent信息
  */
 import { useState, useEffect } from 'react';
-import { Bot, Code, Settings, ChevronDown, ChevronRight } from 'lucide-react';
-import { getAgents, getAgent } from '../services/api';
+import { Bot, Code, Settings, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { getAgents, getAgent, reloadAgents } from '../services/api';
 import './AgentModal.css';
 
 export const AgentModal = ({ isOpen, onClose, currentAgentName }) => {
   const [agents, setAgents] = useState([]);
   const [agentDetails, setAgentDetails] = useState({});
   const [loading, setLoading] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [expandedAgents, setExpandedAgents] = useState({});
 
   useEffect(() => {
@@ -48,6 +50,29 @@ export const AgentModal = ({ isOpen, onClose, currentAgentName }) => {
     }
   };
 
+  const handleReload = async () => {
+    setReloading(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await reloadAgents();
+      setSuccessMessage(response.message);
+
+      // 重新加载Agent列表
+      await fetchAgents();
+
+      // 3秒后清除成功消息
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReloading(false);
+    }
+  };
+
   const toggleExpand = (agentName) => {
     setExpandedAgents((prev) => ({
       ...prev,
@@ -61,15 +86,40 @@ export const AgentModal = ({ isOpen, onClose, currentAgentName }) => {
     <div className="agent-overlay" onClick={onClose}>
       <div className="agent-modal" onClick={(e) => e.stopPropagation()}>
         <div className="agent-header">
-          <h2>Agent 列表</h2>
-          <button className="agent-close" onClick={onClose}>×</button>
+          <div className="agent-header-left">
+            <h2>Agent 列表</h2>
+          </div>
+          <div className="agent-header-right">
+            <button
+              className={`agent-reload-btn ${reloading ? 'loading' : ''}`}
+              onClick={handleReload}
+              disabled={reloading}
+              title="重载所有Agent插件"
+            >
+              <RefreshCw size={16} className={reloading ? 'spinning' : ''} />
+              {reloading ? '重载中...' : '重载'}
+            </button>
+            <button className="agent-close" onClick={onClose} title="关闭">×</button>
+          </div>
         </div>
+
+        {/* 成功提示 */}
+        {successMessage && (
+          <div className="agent-success-message">
+            ✓ {successMessage}
+          </div>
+        )}
+
+        {/* 错误提示 */}
+        {error && (
+          <div className="agent-error">
+            ✗ {error}
+          </div>
+        )}
 
         <div className="agent-content">
           {loading ? (
             <div className="agent-loading">加载中...</div>
-          ) : error ? (
-            <div className="agent-error">{error}</div>
           ) : agents.length === 0 ? (
             <div className="agent-empty">
               <Bot size={48} />

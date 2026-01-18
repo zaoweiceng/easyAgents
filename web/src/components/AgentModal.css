@@ -53,11 +53,91 @@
   border-bottom: 1px solid #e5e7eb;
 }
 
+.agent-header-left {
+  display: flex;
+  align-items: center;
+}
+
+.agent-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .agent-header h2 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
   color: #111827;
+}
+
+/* Reload Button */
+.agent-reload-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.agent-reload-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.agent-reload-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.agent-reload-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+}
+
+.agent-reload-btn .spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Success Message */
+.agent-success-message {
+  background: #d4edda;
+  color: #155724;
+  padding: 12px 24px;
+  margin: 0 24px;
+  border-radius: 8px;
+  border-left: 4px solid #28a745;
+  font-size: 14px;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .agent-close {

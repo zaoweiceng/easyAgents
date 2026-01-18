@@ -13,9 +13,13 @@ export const Agents = () => {
     agents,
     selectedAgent,
     isLoading,
+    isReloading,
     error,
+    successMessage,
     loadAgentDetail,
+    reloadAgentsPlugin,
     setSelectedAgent,
+    setSuccessMessage,
   } = useAgents();
 
   /**
@@ -34,13 +38,55 @@ export const Agents = () => {
     setSelectedAgent(null);
   };
 
+  /**
+   * 重载Agent插件
+   */
+  const handleReload = async () => {
+    try {
+      await reloadAgentsPlugin();
+      // 3秒后自动清除成功消息
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 3000);
+    } catch (err) {
+      console.error('重载失败:', err);
+    }
+  };
+
   return (
     <div className="agents-container">
       {/* 头部 */}
       <div className="agents-header">
-        <h1>🔧 Agent 管理器</h1>
-        <p>查看和管理所有可用的AI Agent</p>
+        <div className="header-content">
+          <div>
+            <h1>🔧 Agent 管理器</h1>
+            <p>查看和管理所有可用的AI Agent</p>
+          </div>
+          <button
+            className={`reload-button ${isReloading ? 'loading' : ''}`}
+            onClick={handleReload}
+            disabled={isReloading}
+          >
+            {isReloading ? (
+              <>
+                <span className="spinner-small"></span>
+                重载中...
+              </>
+            ) : (
+              <>
+                🔄 重载插件
+              </>
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* 成功提示 */}
+      {successMessage && (
+        <div className="success-message">
+          <strong>✓ 成功:</strong> {successMessage}
+        </div>
+      )}
 
       {/* 错误提示 */}
       {error && (
