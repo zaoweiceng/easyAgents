@@ -102,6 +102,30 @@
   text-decoration: underline;
 }
 
+/* 下载链接样式 */
+.markdown-content a.download-link {
+  display: inline-block;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white !important;
+  padding: 0.5em 1.2em;
+  border-radius: 6px;
+  font-weight: 500;
+  text-decoration: none !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: all 0.2s ease;
+}
+
+.markdown-content a.download-link:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  text-decoration: none !important;
+}
+
+.markdown-content a.download-link:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
 .markdown-content img {
   max-width: 100%;
   height: auto;

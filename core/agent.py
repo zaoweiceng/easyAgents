@@ -308,12 +308,26 @@ class Agent(BaseModel):
 
             # 异步上传
             import asyncio
+            import concurrent.futures
             file_service = get_file_service()
 
-            temp_file = TempUploadFile(filename, content)
-            file_record = asyncio.get_event_loop().run_until_complete(
-                file_service.upload_file(temp_file, session_id, metadata)
-            )
+            # 定义异步函数
+            async def _upload_file():
+                temp_file = TempUploadFile(filename, content)
+                return await file_service.upload_file(temp_file, session_id, metadata)
+
+            # 尝试在现有事件循环中运行
+            try:
+                loop = asyncio.get_running_loop()
+                # 有运行中的事件循环，在新线程中运行
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        lambda: asyncio.run(_upload_file())
+                    )
+                    file_record = future.result()
+            except RuntimeError:
+                # 没有运行中的事件循环，直接运行
+                file_record = asyncio.run(_upload_file())
 
             return file_record.to_dict()
 
@@ -360,16 +374,30 @@ class Agent(BaseModel):
         """
         try:
             import asyncio
+            import concurrent.futures
             file_service = get_file_service()
 
-            file_record = asyncio.get_event_loop().run_until_complete(
-                file_service.create_download_file(
+            # 定义异步函数
+            async def _create_file():
+                return await file_service.create_download_file(
                     content=content,
                     filename=filename,
                     content_type=content_type,
                     session_id=session_id
                 )
-            )
+
+            # 尝试在现有事件循环中运行
+            try:
+                loop = asyncio.get_running_loop()
+                # 有运行中的事件循环，在新线程中运行
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        lambda: asyncio.run(_create_file())
+                    )
+                    file_record = future.result()
+            except RuntimeError:
+                # 没有运行中的事件循环，直接运行
+                file_record = asyncio.run(_create_file())
 
             logger.info(f"创建下载文件成功: {filename} -> {file_record.file_id}")
             return file_record.to_dict()

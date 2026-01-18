@@ -104,7 +104,7 @@ class WebSummarizerAgent(Agent):
     def __init__(self):
         super().__init__(
             name="web_summarizer_agent",
-            description="专门用于获取和格式化网页内容，或者http请求的内容。可以爬取指定网页的内容，进行格式化处理，然后传递给general_agent进行智能总结。",
+            description="专门用于获取和格式化网页内容，或者http请求的内容。可以爬取指定网页的内容，进行格式化处理，然后传递给general_agent进行智能总结。如果没有网页的url请不要调用该agent。",
             handles=[
                 "总结网页", "网页总结", "网页内容",
                 "爬取网页", "获取网页", "抓取网页",

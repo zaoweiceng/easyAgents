@@ -5,7 +5,7 @@ from .agent import normalize_agent_output
 import openai
 import json
 import logging
-from typing import Generator, Dict, Any, Union, List
+from typing import Generator, Dict, Any, Union, List, Optional
 from datetime import datetime
 import time
 from config import get_config
@@ -495,10 +495,9 @@ class AgentManager:
             thinking_pattern = r'<th?ink?[^>]*>.*?</th?ink?>'
             content = re.sub(thinking_pattern, '', content, flags=re.DOTALL)
 
-            json_response = json.loads(content
-                                       .split("<|message|>")[-1]
-                                       .split("``")[-1]
-                                       .strip())
+            # 提取JSON
+            json_str = self._extract_json_from_llm_output(content)
+            json_response = json.loads(json_str)
             return agent(Message(**json_response))
 
     def _stream_llm_call(
@@ -622,9 +621,46 @@ class AgentManager:
                     # 如果没找到代码块，取最后一部分
                     json_str = parts[-1].strip()
 
-            # 查找 <|message|> 标签之后的内容
-            if "<|message|>" in json_str:
-                json_str = json_str.split("<|message|>")[-1].strip()
+            # 查找 {|message|} 标签之后的内容
+            if "{|message|}" in json_str:
+                json_str = json_str.split("{|message|}")[-1].strip()
+
+            # 尝试修复常见JSON格式问题
+            # 1. 移除可能的BOM标记和前后空白
+            json_str = json_str.strip().strip('\ufeff')
+
+            # 2. 查找JSON对象的开始和结束位置（处理未闭合的JSON）
+            if json_str.startswith('{'):
+                # 找到匹配的结束括号
+                brace_count = 0
+                in_string = False
+                escape_next = False
+                end_pos = 0
+
+                for i, char in enumerate(json_str):
+                    if escape_next:
+                        escape_next = False
+                        continue
+
+                    if char == '\\':
+                        escape_next = True
+                        continue
+
+                    if char == '"' and not escape_next:
+                        in_string = not in_string
+                        continue
+
+                    if not in_string:
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_pos = i + 1
+                                break
+
+                if end_pos > 0:
+                    json_str = json_str[:end_pos]
 
             # 记录调试信息
             logger.debug(f"Agent {agent_name} - 提取的JSON字符串前300字符: {json_str[:300]}")
@@ -635,7 +671,32 @@ class AgentManager:
                 logger.error(f"JSON解析失败: {e}")
                 logger.error(f"完整内容: {complete_content}")
                 logger.error(f"提取的JSON字符串: {json_str}")
-                raise
+
+                # 尝试修复未闭合的JSON字符串
+                fixed_json = self._fix_incomplete_json(json_str)
+                if fixed_json != json_str:
+                    try:
+                        json_response = json.loads(fixed_json)
+                        logger.info(f"成功修复未闭合的JSON")
+                    except:
+                        # 如果修复失败，尝试使用正则提取
+                        pass
+                    else:
+                        # 修复成功，继续处理
+                        pass
+
+                # 如果第一次修复失败，尝试更激进的修复：使用正则提取所有JSON字符串
+                if 'json_response' not in locals():
+                    # 尝试找到完整的JSON对象（改进的正则，支持嵌套）
+                    json_match = self._extract_json_with_regex(json_str)
+                    if json_match:
+                        try:
+                            json_response = json.loads(json_match)
+                            logger.info(f"使用正则匹配成功修复JSON")
+                        except:
+                            raise
+                    else:
+                        raise
 
             # 调用Agent处理
             message = Message(**json_response)
@@ -681,6 +742,187 @@ class AgentManager:
                     "recoverable": False
                 }
             }
+
+    def _extract_json_from_llm_output(self, content: str) -> str:
+        """
+        从LLM输出中提取JSON字符串
+
+        Args:
+            content: LLM的原始输出
+
+        Returns:
+            str: 提取出的JSON字符串
+        """
+        import re
+
+        json_str = content.strip()
+
+        # 1. 移除可能的BOM标记和前后空白
+        json_str = json_str.strip().strip('\ufeff')
+
+        # 2. 移除 ```json 和 ``` 标记
+        if "```" in json_str:
+            parts = json_str.split("```")
+            for i, part in enumerate(parts):
+                if i % 2 == 1:  # 奇数索引是代码块内容
+                    json_str = part.strip()
+                    if json_str.startswith("json"):
+                        json_str = json_str[4:].strip()
+                    break
+            else:
+                # 如果没找到代码块，取最后一部分
+                json_str = parts[-1].strip()
+
+        # 3. 查找 {|message|} 标签之后的内容
+        if "{|message|}" in json_str:
+            json_str = json_str.split("{|message|}")[-1].strip()
+        elif "<|message|>" in json_str:
+            # 兼容旧格式
+            json_str = json_str.split("<|message|>")[-1].strip()
+
+        # 4. 查找JSON对象的开始和结束位置（处理未闭合的JSON）
+        if json_str.startswith('{'):
+            # 找到匹配的结束括号
+            brace_count = 0
+            in_string = False
+            escape_next = False
+            end_pos = 0
+
+            for i, char in enumerate(json_str):
+                if escape_next:
+                    escape_next = False
+                    continue
+
+                if char == '\\':
+                    escape_next = True
+                    continue
+
+                if char == '"' and not escape_next:
+                    in_string = not in_string
+                    continue
+
+                if not in_string:
+                    if char == '{':
+                        brace_count += 1
+                    elif char == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            end_pos = i + 1
+                            break
+
+            if end_pos > 0:
+                json_str = json_str[:end_pos]
+
+        return json_str
+
+    def _fix_incomplete_json(self, json_str: str) -> str:
+        """
+        尝试修复未闭合的JSON字符串
+
+        Args:
+            json_str: 可能未闭合的JSON字符串
+
+        Returns:
+            str: 修复后的JSON字符串，如果无法修复则返回原字符串
+        """
+        import re
+
+        # 检查是否在字符串中间被截断
+        # 统计引号数量，如果是奇数说明字符串未闭合
+        quote_count = 0
+        escape_next = False
+        for i, char in enumerate(json_str):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"':
+                quote_count += 1
+
+        # 如果引号数量是奇数，说明有未闭合的字符串
+        if quote_count % 2 != 0:
+            # 找到最后一个未闭合的字符串的开始位置
+            lines = json_str.split('\n')
+            last_line = lines[-1]
+
+            # 如果最后一行看起来像是content字段的值被截断
+            # 尝试闭合字符串并完成JSON对象
+            if '"content":' in json_str or 'content":' in json_str:
+                # 移除最后的不完整行
+                fixed_lines = lines[:-1]
+                fixed_json = '\n'.join(fixed_lines)
+
+                # 检查需要闭合的括号数量
+                open_braces = fixed_json.count('{') - fixed_json.count('}')
+                open_brackets = fixed_json.count('[') - fixed_json.count(']')
+
+                # 闭合最后一个值（假设是content字段）
+                # 移除可能的逗号
+                fixed_json = fixed_json.rstrip()
+                if fixed_json.endswith(','):
+                    fixed_json = fixed_json[:-1]
+
+                # 闭合字符串和对象
+                fixed_json += '"\n  }'
+
+                # 添加缺少的闭合括号
+                if open_brackets > 0:
+                    fixed_json += '\n' + ']' * open_brackets
+                if open_braces > 0:
+                    fixed_json += '\n' + '}' * (open_braces - 1)
+
+                return fixed_json
+
+        return json_str
+
+    def _extract_json_with_regex(self, json_str: str) -> Optional[str]:
+        """
+        使用改进的正则表达式提取JSON对象
+
+        Args:
+            json_str: 可能包含其他内容的字符串
+
+        Returns:
+            提取出的JSON字符串，如果失败则返回None
+        """
+        import re
+
+        # 尝试从开头找到第一个完整的JSON对象
+        # 使用状态机来匹配嵌套的括号
+        brace_count = 0
+        in_string = False
+        escape_next = False
+        start_pos = -1
+
+        for i, char in enumerate(json_str):
+            if escape_next:
+                escape_next = False
+                continue
+
+            if char == '\\':
+                escape_next = True
+                continue
+
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+
+            if not in_string:
+                if char == '{' and start_pos == -1:
+                    start_pos = i
+                    brace_count = 1
+                elif char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    if start_pos != -1:
+                        brace_count -= 1
+                        if brace_count == 0:
+                            # 找到完整的JSON对象
+                            return json_str[start_pos:i+1]
+
+        return None
 
     def _get_timestamp(self) -> str:
         """获取ISO格式时间戳"""
