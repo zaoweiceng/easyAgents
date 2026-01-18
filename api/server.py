@@ -337,6 +337,64 @@ async def chat_stream(request: ChatRequest):
     collected_events = []  # 收集所有事件用于保存到数据库
     paused = False  # 标记是否进入暂停状态
 
+    # 保存消息到数据库的辅助函数
+    def save_message_to_db():
+        try:
+            # 构造消息数据 - 取最后一个 message（包含最终答案或表单）
+            msg_data = None
+            content_to_save = full_response_content
+
+            # 从后往前找最后一个 message
+            for event in reversed(response_events):
+                if event.get("type") == "message":
+                    msg_data = event.get("data", {}).get("message")
+                    # 安全地获取 agent_name
+                    agent_name = 'Unknown'
+                    if msg_data:
+                        if hasattr(msg_data, 'agent_name'):
+                            agent_name = msg_data.agent_name
+                        elif isinstance(msg_data, dict) and 'agent_name' in msg_data:
+                            agent_name = msg_data['agent_name']
+                    logger.info(f"找到 message 事件，agent: {agent_name}")
+                    break
+
+            if not msg_data:
+                for event in response_events:
+                    if event.get("type") == "message":
+                        msg_data = event.get("data", {}).get("message")
+                        break
+
+            # 如果暂停了，检查是否需要调整
+            if paused and msg_data:
+                # msg_data 是 Message 对象，提取 data 字段
+                if hasattr(msg_data, 'data') and msg_data.data:
+                    if hasattr(msg_data.data, 'form_config'):
+                        # 有表单配置，保存表单配置到 data，清空 content
+                        msg_data = msg_data.data
+                        content_to_save = ''
+                    elif hasattr(msg_data, 'model_dump'):
+                        # 使用 model_dump() 转换为字典
+                        msg_dict = msg_data.model_dump()
+                        if msg_dict.get('data', {}).get('form_config'):
+                            msg_data = msg_dict['data']
+                            content_to_save = ''
+                        else:
+                            content_to_save = ''
+
+            logger.info(f"保存消息到数据库 - events数量: {len(collected_events) if collected_events else 0}")
+            for evt in (collected_events or []):
+                logger.info(f"  保存事件: {evt.get('type')} - {evt.get('data', {}).get('agent_name', 'unknown')}")
+
+            db.add_message(
+                conversation_id=conv['id'],
+                role='assistant',
+                content=content_to_save,
+                data=msg_data,
+                events=collected_events if collected_events else None
+            )
+        except Exception as save_error:
+            logger.error(f"保存流式消息失败: {save_error}")
+
     async def generate():
         """生成SSE事件流"""
         nonlocal full_response_content, response_events, collected_events, paused
@@ -361,13 +419,18 @@ async def chat_stream(request: ChatRequest):
                     pause_data = event.get("data", {})
                     db.save_paused_context(session_id, pause_data)
                     paused = True
+
+                    # 保存消息到数据库（暂停时也要保存）
+                    save_message_to_db()
+
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                    # 暂停时不发送 [DONE]
+                    # 暂停时不发送 [DONE]，直接返回
                     return
 
                 # 收集agent_start和agent_end事件
                 if event.get("type") in ["agent_start", "agent_end"]:
                     collected_events.append(event)
+                    logger.info(f"收集事件: {event.get('type')} - {event.get('data', {}).get('agent_name', 'unknown')}")
 
                 # 收集delta内容
                 if event.get("type") == "delta":
@@ -386,26 +449,8 @@ async def chat_stream(request: ChatRequest):
             # 发送完成标记
             yield "data: [DONE]\n\n"
 
-            # 保存助手消息（在流结束后，且未暂停时）
-            try:
-                # 只有在未暂停时才保存消息
-                if not paused:
-                    # 构造消息数据
-                    msg_data = None
-                    for event in response_events:
-                        if event.get("type") == "message":
-                            msg_data = event.get("data", {}).get("message")
-                            break
-
-                    db.add_message(
-                        conversation_id=conv['id'],
-                        role='assistant',
-                        content=full_response_content,
-                        data=msg_data,
-                        events=collected_events if collected_events else None
-                    )
-            except Exception as save_error:
-                logger.error(f"保存流式消息失败: {save_error}")
+            # 保存助手消息（正常完成时）
+            save_message_to_db()
 
         except Exception as e:
             logger.error(f"流式聊天处理失败: {e}")
@@ -469,6 +514,132 @@ async def chat_stream_resume(request: ChatRequest):
     response_events = []
     collected_events = []
     paused = False
+    last_message_id = None  # 保存最后一条消息的ID，用于更新
+    conv = db.get_conversation_by_session(session_id)  # 提前获取 conv
+
+    # 保存消息到数据库的辅助函数
+    def save_resume_message_to_db():
+        nonlocal last_message_id
+        try:
+            if not conv:
+                logger.error("无法获取 conversation")
+                return
+
+            logger.info(f"准备保存/更新消息，conversation_id: {conv['id']}")
+
+            # 在同一个数据库连接中查询和更新
+            import sqlite3
+            with sqlite3.connect(db.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+
+                # 先查询该 conversation 有多少条消息
+                count_cursor = conn.execute(
+                    "SELECT COUNT(*) as count FROM messages WHERE conversation_id = ?",
+                    (conv['id'],)
+                )
+                count_result = count_cursor.fetchone()
+                msg_count = count_result['count'] if count_result else 0
+                logger.info(f"当前 conversation 中有 {msg_count} 条消息")
+
+                # 查询最后一条助手消息（不是用户消息）
+                cursor = conn.execute(
+                    "SELECT id, events, role FROM messages WHERE conversation_id = ? AND role = ? ORDER BY created_at DESC LIMIT 1",
+                    (conv['id'], 'assistant')
+                )
+                last_msg = cursor.fetchone()
+
+                if last_msg:
+                    last_message_id = last_msg['id']
+                    logger.info(f"找到最后一条消息 ID: {last_message_id}, role: {last_msg['role']}")
+                else:
+                    logger.warning("未找到任何消息")
+
+            # 构造消息数据 - 取最后一个 message（包含最终答案）
+            msg_data = None
+            for event in reversed(response_events):
+                if event.get("type") == "message":
+                    msg_data = event.get("data", {}).get("message")
+                    # 安全地获取 agent_name
+                    agent_name = 'Unknown'
+                    if msg_data:
+                        if hasattr(msg_data, 'agent_name'):
+                            agent_name = msg_data.agent_name
+                        elif isinstance(msg_data, dict) and 'agent_name' in msg_data:
+                            agent_name = msg_data['agent_name']
+                    logger.info(f"找到 message 事件，agent: {agent_name}")
+                    # 找到最后一个就停止
+                    break
+
+            # 如果没找到，尝试按顺序找
+            if not msg_data:
+                for event in response_events:
+                    if event.get("type") == "message":
+                        msg_data = event.get("data", {}).get("message")
+                        logger.info(f"按顺序找到 message 事件")
+                        break
+
+            logger.info(f"提取到 msg_data: {type(msg_data)}")
+
+            # 合并 events：之前暂停时保存的 events + 当前恢复执行的 events
+            all_events = []
+            if last_msg and last_msg['events']:
+                try:
+                    previous_events = json.loads(last_msg['events'])
+                    all_events.extend(previous_events)
+                    logger.info(f"合并之前的 events，数量: {len(previous_events)}")
+                except Exception as e:
+                    logger.error(f"解析之前的 events 失败: {e}")
+            if collected_events:
+                all_events.extend(collected_events)
+                logger.info(f"添加当前的 events，数量: {len(collected_events)}")
+
+            logger.info(f"总共 events 数量: {len(all_events)}")
+
+            # 如果有最后一条消息的ID，更新它；否则插入新消息
+            if last_message_id:
+                # 在同一个连接中更新
+                with sqlite3.connect(db.db_path) as conn:
+                    # 构造更新的 SQL 和参数
+                    update_sql = """
+                        UPDATE messages
+                        SET content = ?, data = ?, events = ?
+                        WHERE id = ?
+                    """
+
+                    # 序列化 data
+                    data_json = None
+                    if msg_data:
+                        if hasattr(msg_data, 'model_dump'):
+                            data_json = json.dumps(msg_data.model_dump(), ensure_ascii=False)
+                        else:
+                            data_json = json.dumps(msg_data, ensure_ascii=False)
+
+                    # 序列化 events
+                    events_json = json.dumps(all_events, ensure_ascii=False) if all_events else None
+
+                    logger.info(f"准备更新消息 {last_message_id}")
+                    logger.info(f"  content 长度: {len(full_response_content)}")
+                    logger.info(f"  data_json: {bool(data_json)}")
+                    logger.info(f"  events_json: {len(all_events)} 个 events")
+
+                    conn.execute(update_sql, (full_response_content, data_json, events_json, last_message_id))
+                    conn.commit()
+                    logger.info(f"✓ 成功更新消息 ID: {last_message_id}")
+            else:
+                # 插入新消息
+                logger.info("未找到要更新的消息，插入新消息")
+                db.add_message(
+                    conversation_id=conv['id'],
+                    role='assistant',
+                    content=full_response_content,
+                    data=msg_data,
+                    events=all_events if all_events else None
+                )
+                logger.info("✓ 插入新消息完成")
+        except Exception as save_error:
+            logger.error(f"保存恢复后的消息失败: {save_error}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     async def generate():
         """生成SSE事件流"""
@@ -491,12 +662,17 @@ async def chat_stream_resume(request: ChatRequest):
                     pause_data = event.get("data", {})
                     db.save_paused_context(session_id, pause_data)
                     paused = True
+
+                    # 保存消息到数据库（暂停时也要保存）
+                    save_resume_message_to_db()
+
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     return
 
                 # 收集agent_start和agent_end事件
                 if event.get("type") in ["agent_start", "agent_end"]:
                     collected_events.append(event)
+                    logger.info(f"收集事件: {event.get('type')} - {event.get('data', {}).get('agent_name', 'unknown')}")
 
                 # 收集delta内容
                 if event.get("type") == "delta":
@@ -512,34 +688,15 @@ async def chat_stream_resume(request: ChatRequest):
                 await asyncio.sleep(0)
 
             # 发送完成标记
-            yield "data: [DONE]\n\n"
+            if not paused:
+                yield "data: [DONE]\n\n"
 
-            # 保存助手消息（在流结束后，且未暂停时）
-            try:
-                # 只有在未暂停时才保存消息
-                if not paused:
-                    # 构造消息数据
-                    msg_data = None
-                    for event in response_events:
-                        if event.get("type") == "message":
-                            msg_data = event.get("data", {}).get("message")
-                            break
+            # 保存助手消息（正常完成时）
+            save_resume_message_to_db()
 
-                    # 获取conversation_id
-                    conv = db.get_conversation_by_session(session_id)
-                    if conv:
-                        db.add_message(
-                            conversation_id=conv['id'],
-                            role='assistant',
-                            content=full_response_content,
-                            data=msg_data,
-                            events=collected_events if collected_events else None
-                        )
-
-                        # 清除暂停上下文
-                        db.clear_paused_context(session_id)
-            except Exception as save_error:
-                logger.error(f"保存恢复后的消息失败: {save_error}")
+            # 清除暂停上下文（只有在正常完成时）
+            if not paused:
+                db.clear_paused_context(session_id)
 
         except Exception as e:
             logger.error(f"恢复流式聊天处理失败: {e}")

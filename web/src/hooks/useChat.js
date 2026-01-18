@@ -536,72 +536,92 @@ export const useChat = (initialSessionId = null) => {
       const formattedMessages = conversationData.messages.map((msg) => {
         let content = msg.content;
         let thinkingSteps = [];
-        let data = msg.data;
+        let msgData = msg.data;
+        let isFormSubmitted = false;
 
-        // 检查是否包含 form_config
-        const hasFormConfig = data && data.form_config;
+        // 首先检查是否包含 form_config
+        const hasFormConfig = msgData && (
+          msgData.form_config ||
+          (msgData.data && msgData.data.form_config) ||
+          (typeof msgData === 'object' && JSON.stringify(msgData).includes('"form_config"'))
+        );
 
-        // 如果是assistant消息且没有 form_config，尝试解析JSON并提取answer
-        if (msg.role === 'assistant' && content && !hasFormConfig) {
-          try {
-            // 尝试找到所有JSON对象（可能包含多个）
-            const jsonMatches = content.match(/\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g) || [];
-
-            if (jsonMatches.length > 0) {
-              // 解析所有JSON对象
-              const jsonObjects = jsonMatches.map(match => {
-                try {
-                  return JSON.parse(match);
-                } catch (e) {
-                  return null;
-                }
-              }).filter(obj => obj !== null);
-
-              // 从后往前找第一个有answer且没有form_config的JSON
-              for (let i = jsonObjects.length - 1; i >= 0; i--) {
-                const jsonObj = jsonObjects[i];
-                if (jsonObj.data && jsonObj.data.answer && !jsonObj.data.form_config) {
-                  content = jsonObj.data.answer;
-                  break;
-                }
-              }
-
-              // 从所有JSON对象构建thinkingSteps
-              thinkingSteps = jsonObjects.map((jsonObj, index) => {
-                // 跳过entrance_agent（通常是第一个）
-                if (index === 0 && jsonObj.next_agent && jsonObj.next_agent !== 'none') {
-                  return null; // 跳过entrance_agent的响应
-                }
-
-                // 只处理有实际工作的agent
-                if (jsonObj.agent_selection_reason || jsonObj.data) {
-                  return {
-                    agent_name: extractAgentName(jsonObj),
-                    reason: jsonObj.agent_selection_reason || null,
-                    task: (jsonObj.task_list && jsonObj.task_list.length > 0) ? jsonObj.task_list[0] : null
-                  };
-                }
-                return null;
-              }).filter(step => step !== null);
-            }
-          } catch (e) {
-            console.error('解析历史消息JSON失败:', e);
-            // 如果解析失败，保持原样
+        // 如果包含表单配置，从 msgData 中提取
+        if (hasFormConfig) {
+          // 如果 msgData 本身就是表单配置
+          if (msgData.form_config) {
+            // 已经是正确的格式
+          } else if (msgData.data && msgData.data.form_config) {
+            msgData = msgData.data;
           }
         }
 
-        // 如果包含 form_config，清空 content（避免显示 JSON）
-        if (hasFormConfig) {
+        // 优先从 msgData.data.answer 中提取答案（general_agent 的答案）
+        if (msgData && msgData.data && msgData.data.answer && typeof msgData.data.answer === 'string') {
+          content = msgData.data.answer;
+        }
+        // 尝试从 msgData.answer 中提取
+        else if (msgData && msgData.answer && typeof msgData.answer === 'string') {
+          content = msgData.answer;
+        }
+        // 如果包含 form_config，清空 content
+        else if (hasFormConfig) {
           content = '';
+        }
+        // 如果 msgData 中没有 answer 且没有表单，尝试从 content 中解析
+        else if (msg.role === 'assistant' && content && typeof content === 'string') {
+          // 检查 content 是否是 JSON 格式（包含 "status" 等字段）
+          if (content.includes('"status"') || content.includes('"form_config"')) {
+            // 是原始 JSON，应该清空
+            content = '';
+          } else {
+            try {
+              // 尝试解析为 JSON
+              const jsonObj = JSON.parse(content);
+              if (jsonObj.data && jsonObj.data.answer) {
+                content = jsonObj.data.answer;
+              } else if (jsonObj.answer) {
+                content = jsonObj.answer;
+              } else {
+                content = '';
+              }
+            } catch (e) {
+              // 不是 JSON，保持原样
+            }
+          }
+        }
+
+        // 从 events 中提取 thinking steps
+        if (msg.events && Array.isArray(msg.events) && msg.events.length > 0) {
+          thinkingSteps = [];
+
+          for (let i = 0; i < msg.events.length; i++) {
+            const event = msg.events[i];
+            if (event.type === 'agent_end') {
+              thinkingSteps.push({
+                agent_name: event.data.agent_name,
+                reason: event.data.agent_selection_reason,
+                task: event.data.task_list && event.data.task_list.length > 0
+                  ? event.data.task_list[0]
+                  : null
+              });
+            }
+          }
+
+          // 过滤掉 entrance_agent 和 general_agent，只显示有实际工作的 agent
+          thinkingSteps = thinkingSteps.filter(step =>
+            step.agent_name !== 'entrance_agent' && step.agent_name !== 'general_agent'
+          );
         }
 
         return {
           role: msg.role,
           content: content,
-          data: data,
+          data: msgData,
           events: msg.events,
           thinkingSteps: thinkingSteps,
-          isThinkingComplete: true, // 历史消息总是完成状态
+          isThinkingComplete: true,
+          isFormSubmitted: isFormSubmitted
         };
       });
 
