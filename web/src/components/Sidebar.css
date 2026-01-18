@@ -41,6 +41,30 @@
   border-bottom: 1px solid #e5e7eb;
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.header-new-chat-btn {
+  padding: 8px;
+  border: none;
+  border-radius: 6px;
+  background: #e0f2fe;
+  color: #0284c7;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.header-new-chat-btn:hover {
+  background: #bae6fd;
 }
 
 .new-chat-btn {

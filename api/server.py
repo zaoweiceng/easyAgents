@@ -1035,6 +1035,103 @@ async def api_info():
 
 
 # ============================================================================
+# 模型配置管理
+# ============================================================================
+
+@app.get("/api/config/model", tags=["配置"])
+async def get_model_config():
+    """
+    获取当前模型配置（不返回API Key）
+    """
+    try:
+        llm_config = config.get_llm_config()
+        return {
+            "base_url": llm_config.get("base_url", ""),
+            "model_name": llm_config.get("model_name", "")
+        }
+    except Exception as e:
+        logger.error(f"获取模型配置失败: {e}")
+        raise HTTPException(status_code=500, detail="获取配置失败")
+
+
+@app.post("/api/config/model", tags=["配置"])
+async def update_model_config(request: Request):
+    """
+    更新模型配置并保存到.env文件
+    """
+    try:
+        data = await request.json()
+
+        base_url = data.get("base_url", "").strip()
+        model_name = data.get("model_name", "").strip()
+        api_key = data.get("api_key", "").strip()
+
+        if not base_url or not model_name:
+            raise HTTPException(
+                status_code=400,
+                detail="base_url和model_name不能为空"
+            )
+
+        # 读取.env文件
+        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+
+        if not os.path.exists(env_path):
+            raise HTTPException(
+                status_code=404,
+                detail=".env文件不存在"
+            )
+
+        # 读取现有内容
+        with open(env_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # 更新配置
+        updated_lines = []
+        config_updated = False
+
+        for line in lines:
+            line = line.strip()
+            if line.startswith("LLM_BASE_URL="):
+                updated_lines.append(f'LLM_BASE_URL="{base_url}"\n')
+                config_updated = True
+            elif line.startswith("LLM_MODEL_NAME="):
+                updated_lines.append(f'LLM_MODEL_NAME="{model_name}"\n')
+                config_updated = True
+            elif line.startswith("LLM_API_KEY="):
+                if api_key:  # 只有提供了新key才更新
+                    updated_lines.append(f'LLM_API_KEY="{api_key}"\n')
+                else:
+                    updated_lines.append(line + '\n')
+                config_updated = True
+            else:
+                updated_lines.append(line + '\n')
+
+        # 如果配置不存在，添加到文件末尾
+        if not config_updated:
+            updated_lines.append(f'LLM_BASE_URL="{base_url}"\n')
+            updated_lines.append(f'LLM_MODEL_NAME="{model_name}"\n')
+            if api_key:
+                updated_lines.append(f'LLM_API_KEY="{api_key}"\n')
+
+        # 写回文件
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.writelines(updated_lines)
+
+        logger.info(f"模型配置已更新: base_url={base_url}, model_name={model_name}")
+
+        return {
+            "status": "success",
+            "message": "配置已保存，重启服务后生效"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新模型配置失败: {e}")
+        raise HTTPException(status_code=500, detail="保存配置失败")
+
+
+# ============================================================================
 # SPA前端路由支持
 # ============================================================================
 

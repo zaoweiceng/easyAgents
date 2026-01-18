@@ -3,11 +3,13 @@
  */
 import { useState } from 'react';
 import { Trash2, MessageSquare, Clock, Download, ChevronDown } from 'lucide-react';
+import { ConfirmDialog } from './ConfirmDialog';
 import './SidebarItem.css';
 
 export const SidebarItem = ({ conversation, isActive, onClick, onDelete, onExport }) => {
   const [showDelete, setShowDelete] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -91,15 +93,25 @@ export const SidebarItem = ({ conversation, isActive, onClick, onDelete, onExpor
             className="sidebar-item-delete"
             onClick={(e) => {
               e.stopPropagation();
-              if (confirm('确定要删除这个对话吗？')) {
-                onDelete();
-              }
+              setShowConfirm(true);
             }}
           >
             <Trash2 size={16} />
           </button>
         </>
       )}
+
+      {/* 确认对话框 */}
+      <ConfirmDialog
+        isOpen={showConfirm}
+        title="删除对话"
+        message={`确定要删除对话"${conversation.title}"吗？此操作不可恢复。`}
+        onConfirm={() => {
+          setShowConfirm(false);
+          onDelete();
+        }}
+        onCancel={() => setShowConfirm(false)}
+      />
     </div>
   );
 };

@@ -73,6 +73,7 @@ function App() {
       <Chat
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        onNewChat={handleNewChat}
         settings={settings}
         onSettingsChange={handleSettingsChange}
         currentSessionId={currentSessionId}

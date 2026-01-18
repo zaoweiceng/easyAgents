@@ -50,9 +50,11 @@ export const Sidebar = ({
             <span>新对话</span>
           </button>
 
-          <button className="sidebar-close" onClick={onToggle}>
-            <X size={20} />
-          </button>
+          <div className="header-actions">
+            <button className="sidebar-close" onClick={onToggle}>
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Search Box */}

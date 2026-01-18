@@ -2,7 +2,7 @@
  * Chat Component - 聊天界面组件（ChatGPT风格）
  */
 import { useState, useRef, useEffect } from 'react';
-import { Menu, Settings, Send, Bot } from 'lucide-react';
+import { Menu, Settings, Send, Bot, Plus } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
 import { SettingsModal } from './SettingsModal';
 import { AgentModal } from './AgentModal';
@@ -16,7 +16,8 @@ export const Chat = ({
   settings,
   onSettingsChange,
   currentSessionId,
-  onTitleUpdate
+  onTitleUpdate,
+  onNewChat
 }) => {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -99,6 +100,9 @@ export const Chat = ({
         <div className="header-left">
           <button className="icon-btn" onClick={onToggleSidebar}>
             <Menu size={24} />
+          </button>
+          <button className="icon-btn new-chat-btn" onClick={onNewChat} title="新建对话">
+            <Plus size={20} />
           </button>
           <h1>easyAgent</h1>
         </div>
