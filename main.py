@@ -42,16 +42,15 @@ def run_api_server(mode='production', host='0.0.0.0', port=8000):
         # 开发模式（自动重载）
         reload = True
         print(f"\n🚀 启动开发模式: http://{host}:{port}")
-        print("📚 API文档: http://localhost:8000/docs")
+        print(f"📚 API文档: http://{host}:{port}/docs")
         print("\n⚡ 自动重载已启用")
         print("按 Ctrl+C 停止服务器\n")
 
     elif mode == 'production':
         # 生产模式（默认）- 使用单进程
         reload = False
-        print(f"\n🚀 启动生产模式: http://{host}:{port}")
-        print(f"📚 API文档: http://localhost:8000/docs")
-        print("\n⚙️  使用单进程模式（稳定可靠）")
+        print(f"\n🚀 启动生产模式: http://localhost:{port}")
+        print(f"📚 API文档: http://localhost:{port}/docs")
         print("按 Ctrl+C 停止服务器\n")
 
     else:  # custom
@@ -82,8 +81,8 @@ def run_api_server(mode='production', host='0.0.0.0', port=8000):
                 host=host,
                 port=port,
                 reload=False,
-                log_level="info",
-                access_log=True
+                log_level="error",
+                access_log=False
             )
     except KeyboardInterrupt:
         # 用户主动停止，不做任何处理

@@ -75,6 +75,7 @@ ffmpeg*
 ffprobe*
 history.db
 doc/
+.claude/
 
 # MCP
 mcp_config.json  # 包含敏感信息的MCP配置

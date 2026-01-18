@@ -641,7 +641,9 @@ AI回复：{response}
                     {"role": "user", "content": title_prompt.format(query=query, response=response[:500])}
                 ],
                 temperature=0.7,
-                max_tokens=50
+                max_tokens=50,
+                # 关闭推理
+                reasoning_effort='none'
             )
 
             # 提取标题文本
