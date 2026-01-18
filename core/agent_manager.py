@@ -8,6 +8,7 @@ import logging
 from typing import Generator, Dict, Any, Union, List
 from datetime import datetime
 import time
+from config import get_config
 
 logger = logging.getLogger(app_name)
 logger.setLevel(logging.INFO)  # 改为INFO级别以查看流式日志
@@ -18,6 +19,10 @@ class AgentManager:
                  base_url: str,
                  api_key: str,
                  model_name: str,
+                 temperature: float = 0.7,
+                 top_p: float = 0.9,
+                 top_k: int = 40,
+                 stream_chunk_size: int = 10,
                  mcp_configs: list = None
                  ):
         """
@@ -28,6 +33,10 @@ class AgentManager:
             base_url: LLM服务地址
             api_key: LLM API密钥
             model_name: 模型名称
+            temperature: 温度参数（0-2）
+            top_p: top_p参数（0-1）
+            top_k: top_k参数
+            stream_chunk_size: 流式输出日志记录间隔
             mcp_configs: MCP服务器配置列表（可选）
         """
         self.plugin_src = plugin_src
@@ -38,9 +47,37 @@ class AgentManager:
             api_key=api_key
         )
         self.model_name = model_name
+        self.temperature = temperature
+        self.top_p = top_p
+        self.top_k = top_k
+        self.stream_chunk_size = stream_chunk_size
         self.start_agent = start_agent_name
         self.end_agent = end_agent_name
         self.max_trys = 3
+
+    def set_llm_params(self, temperature: float = None, top_p: float = None, top_k: int = None):
+        """
+        动态设置LLM参数（用于前端配置）
+
+        Args:
+            temperature: 温度参数
+            top_p: top_p参数
+            top_k: top_k参数
+        """
+        if temperature is not None:
+            self.temperature = temperature
+        if top_p is not None:
+            self.top_p = top_p
+        if top_k is not None:
+            self.top_k = top_k
+
+    def reset_llm_params(self):
+        """重置LLM参数为默认值"""
+        config = get_config()
+        llm_config = config.get_llm_config()
+        self.temperature = llm_config.get('temperature', 0.7)
+        self.top_p = llm_config.get('top_p', 0.9)
+        self.top_k = llm_config.get('top_k', 40)
 
     def __call__(self, query: str, stream: bool = False, session_id: str = None, context_manager=None, resume_data: Dict = None) -> Union[list, Generator[Dict[str, Any], None, None]]:
         """
@@ -275,7 +312,7 @@ class AgentManager:
                     event_count += 1
                     # 转发LLM的delta事件
                     if event["type"] == "delta":
-                        if event_count % 10 == 1:  # 每10个delta记录一次
+                        if event_count % self.stream_chunk_size == 1:  # 每N个delta记录一次
                             logger.info(f"[STREAM] Yielding delta #{event_count} for {agent_name}")
                         yield event
                     elif event["type"] == "message":
@@ -447,6 +484,9 @@ class AgentManager:
                     {"role": "system", "content": agent_prompt.string(agent_name)},
                     {"role": "user", "content": user_message}
                 ],
+                temperature=self.temperature,
+                top_p=self.top_p,
+                extra_body={"top_k": self.top_k} if self.top_k else None
             )
             content = response.choices[0].message.content
 
@@ -485,7 +525,10 @@ class AgentManager:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message}
                 ],
-                stream=True  # 启用流式
+                stream=True,  # 启用流式
+                temperature=self.temperature,
+                top_p=self.top_p,
+                extra_body={"top_k": self.top_k} if self.top_k else None
             )
 
             # 收集增量内容，同时过滤thinking标签
@@ -676,9 +719,11 @@ AI回复：{response}
                 messages=[
                     {"role": "user", "content": title_prompt.format(query=query, response=response[:1000])}
                 ],
-                temperature=1.0,
+                temperature=1.0,  # 标题生成使用较高的温度以获得更多样性
                 max_tokens=1000,
                 stream=False,
+                top_p=self.top_p,
+                extra_body={"top_k": self.top_k} if self.top_k else None,
                 # 关闭推理
                 reasoning_effort='none'
             )

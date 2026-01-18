@@ -22,13 +22,34 @@ class ChatRequest(BaseModel):
         None,
         description="会话ID，用于多轮对话（可选）"
     )
+    # LLM参数（可选，如果不提供则使用环境变量配置）
+    temperature: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=2.0,
+        description="温度参数（0-2）"
+    )
+    top_p: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="top_p参数（0-1）"
+    )
+    top_k: Optional[int] = Field(
+        None,
+        ge=1,
+        description="top_k参数"
+    )
 
     class Config:
         json_schema_extra = {
             "example": {
                 "query": "查询图书信息",
                 "stream": False,
-                "session_id": "optional-session-id"
+                "session_id": "optional-session-id",
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "top_k": 40
             }
         }
 

@@ -21,6 +21,9 @@ def run_api_server(mode='production', host='0.0.0.0', port=8000):
         port: 端口号
     """
     import uvicorn
+    import webbrowser
+    import threading
+    import time
 
     print("=" * 70)
     print("easyAgent API服务启动")
@@ -62,7 +65,33 @@ def run_api_server(mode='production', host='0.0.0.0', port=8000):
 
     print("=" * 70)
 
+    # 定义打开浏览器的函数
+    def open_browser():
+        """延迟打开浏览器，等待服务器启动"""
+        time.sleep(1.5)  # 等待服务器启动
+
+        # 根据模式确定URL
+        if mode == 'production':
+            # 生产模式使用localhost
+            url = f"http://localhost:{port}"
+        else:
+            # 开发模式和自定义模式使用指定的host
+            # 如果是0.0.0.0，使用localhost
+            url_host = 'localhost' if host == '0.0.0.0' else host
+            url = f"http://{url_host}:{port}"
+
+        try:
+            webbrowser.open(url)
+            print(f"\n🌐 已自动打开浏览器: {url}\n")
+        except Exception as e:
+            print(f"\n⚠️  无法自动打开浏览器: {e}")
+            print(f"请手动访问: {url}\n")
+
     try:
+        # 启动线程异步打开浏览器
+        browser_thread = threading.Thread(target=open_browser, daemon=True)
+        browser_thread.start()
+
         # 统一使用单进程模式（稳定可靠）
         if mode == 'development':
             # 开发模式：单进程 + 自动重载
@@ -145,6 +174,10 @@ def run_cli_mode(args):
             base_url=llm_config['base_url'],
             api_key=llm_config['api_key'],
             model_name=llm_config['model_name'],
+            temperature=llm_config.get('temperature', 0.7),
+            top_p=llm_config.get('top_p', 0.9),
+            top_k=llm_config.get('top_k', 40),
+            stream_chunk_size=llm_config.get('stream_chunk_size', 10),
             mcp_configs=mcp_configs if mcp_configs else None
         )
 

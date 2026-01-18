@@ -9,22 +9,28 @@ import { ConfirmDialog } from './ConfirmDialog';
 import './SettingsModal.css';
 
 export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
-  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'model' | 'data'
+  const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'llm' | 'model' | 'data'
   const [localSettings, setLocalSettings] = useState(settings);
   const [modelConfig, setModelConfig] = useState({
     baseUrl: '',
     modelName: '',
     apiKey: ''
   });
+  const [llmParams, setLlmParams] = useState({
+    temperature: 0.7,
+    top_p: 0.9,
+    top_k: 40
+  });
   const [showKey, setShowKey] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // 保存状态
 
   // 加载当前模型配置
   useEffect(() => {
     if (isOpen) {
       loadModelConfig();
+      loadLlmParams();
     }
   }, [isOpen]);
 
@@ -47,6 +53,22 @@ export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
     }
   };
 
+  const loadLlmParams = async () => {
+    try {
+      const response = await fetch('/api/config/llm-params');
+      if (response.ok) {
+        const data = await response.json();
+        setLlmParams({
+          temperature: data.temperature || 0.7,
+          top_p: data.top_p || 0.9,
+          top_k: data.top_k || 40
+        });
+      }
+    } catch (error) {
+      console.error('加载LLM参数失败:', error);
+    }
+  };
+
   const handleSaveModelConfig = async () => {
     try {
       setIsLoading(true);
@@ -63,8 +85,7 @@ export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
       });
 
       if (response.ok) {
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 2000);
+        alert('✓ 模型配置已保存，重启服务后生效');
       } else {
         alert('保存失败，请检查输入');
       }
@@ -78,8 +99,34 @@ export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
 
   if (!isOpen) return null;
 
-  const handleSave = () => {
-    onSave(localSettings);
+  const handleSave = async () => {
+    // 先保存LLM参数到配置文件
+    setIsSaving(true);
+    try {
+      const response = await fetch('/api/config/llm-params', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(llmParams)
+      });
+
+      if (response.ok) {
+        console.log('LLM参数已保存到配置文件');
+      } else {
+        console.warn('LLM参数保存失败，但其他设置已生效');
+      }
+    } catch (error) {
+      console.error('保存LLM参数失败:', error);
+    } finally {
+      setIsSaving(false);
+    }
+
+    // 然后保存其他设置
+    onSave({
+      ...localSettings,
+      llmParams: llmParams
+    });
     onClose();
   };
 
@@ -100,6 +147,12 @@ export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
             聊天模式
           </button>
           <button
+            className={`settings-tab ${activeTab === 'llm' ? 'active' : ''}`}
+            onClick={() => setActiveTab('llm')}
+          >
+            LLM参数
+          </button>
+          <button
             className={`settings-tab ${activeTab === 'model' ? 'active' : ''}`}
             onClick={() => setActiveTab('model')}
           >
@@ -117,6 +170,7 @@ export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
           {/* 聊天模式设置 */}
           {activeTab === 'chat' && (
             <div className="settings-section">
+              <h3>聊天模式</h3>
               <div className="settings-option">
                 <label>
                   <input
@@ -153,6 +207,61 @@ export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
                 <p className="option-desc">
                   实时显示响应内容，更流畅的体验
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* LLM参数设置 */}
+          {activeTab === 'llm' && (
+            <div className="settings-section">
+              <h3>LLM参数</h3>
+              <p className="option-desc">调整模型输出的随机性和多样性</p>
+
+              <div className="llm-params-grid">
+                <div className="form-group">
+                  <label>温度 (Temperature): {llmParams.temperature}</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={llmParams.temperature}
+                    onChange={(e) => setLlmParams({ ...llmParams, temperature: parseFloat(e.target.value) })}
+                  />
+                  <p className="option-desc">
+                    较低的值使输出更确定，较高的值使输出更随机
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label>Top-P: {llmParams.top_p}</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={llmParams.top_p}
+                    onChange={(e) => setLlmParams({ ...llmParams, top_p: parseFloat(e.target.value) })}
+                  />
+                  <p className="option-desc">
+                    核采样，控制考虑的词汇范围
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label>Top-K: {llmParams.top_k}</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={llmParams.top_k}
+                    onChange={(e) => setLlmParams({ ...llmParams, top_k: parseInt(e.target.value) })}
+                  />
+                  <p className="option-desc">
+                    只保留概率最高的K个词
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -205,10 +314,6 @@ export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
                   </div>
                 </div>
 
-                {saveSuccess && (
-                  <p className="success-message">✓ 配置已保存到.env文件</p>
-                )}
-
                 <button
                   className="settings-btn settings-btn-primary"
                   onClick={handleSaveModelConfig}
@@ -243,9 +348,13 @@ export const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
           <button className="settings-btn settings-btn-cancel" onClick={onClose}>
             关闭
           </button>
-          {activeTab === 'chat' && (
-            <button className="settings-btn settings-btn-save" onClick={handleSave}>
-              保存
+          {(activeTab === 'chat' || activeTab === 'llm') && (
+            <button
+              className="settings-btn settings-btn-save"
+              onClick={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? '保存中...' : '保存'}
             </button>
           )}
         </div>

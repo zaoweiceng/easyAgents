@@ -92,8 +92,9 @@ export const chatSync = async (query, sessionId = null) => {
  * @param {Function} callbacks.onPause - 暂停等待用户输入
  * @param {Function} callbacks.onMetadata - 接收元数据（包括session_id）
  * @param {string} sessionId - 会话ID
+ * @param {Object} llmParams - LLM参数（可选）
  */
-export const chatStream = async (query, callbacks, sessionId = null) => {
+export const chatStream = async (query, callbacks, sessionId = null, llmParams = null) => {
   const {
     onDelta,
     onAgentStart,
@@ -106,16 +107,31 @@ export const chatStream = async (query, callbacks, sessionId = null) => {
   } = callbacks;
 
   try {
+    const requestBody = {
+      query,
+      stream: true,
+      session_id: sessionId,
+    };
+
+    // 如果提供了LLM参数，添加到请求中
+    if (llmParams) {
+      if (llmParams.temperature !== undefined) {
+        requestBody.temperature = llmParams.temperature;
+      }
+      if (llmParams.top_p !== undefined) {
+        requestBody.top_p = llmParams.top_p;
+      }
+      if (llmParams.top_k !== undefined) {
+        requestBody.top_k = llmParams.top_k;
+      }
+    }
+
     const response = await fetch(`${API_BASE_URL}/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        query,
-        stream: true,
-        session_id: sessionId,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -195,8 +211,9 @@ export const chatStream = async (query, callbacks, sessionId = null) => {
  * @param {string} query - 用户提交的表单数据
  * @param {Object} callbacks - 回调函数集合
  * @param {string} sessionId - 会话ID（必须）
+ * @param {Object} llmParams - LLM参数（可选）
  */
-export const chatStreamResume = async (query, callbacks, sessionId) => {
+export const chatStreamResume = async (query, callbacks, sessionId, llmParams = null) => {
   const {
     onDelta,
     onAgentStart,
@@ -213,16 +230,31 @@ export const chatStreamResume = async (query, callbacks, sessionId) => {
   }
 
   try {
+    const requestBody = {
+      query,
+      stream: true,
+      session_id: sessionId,
+    };
+
+    // 如果提供了LLM参数，添加到请求中
+    if (llmParams) {
+      if (llmParams.temperature !== undefined) {
+        requestBody.temperature = llmParams.temperature;
+      }
+      if (llmParams.top_p !== undefined) {
+        requestBody.top_p = llmParams.top_p;
+      }
+      if (llmParams.top_k !== undefined) {
+        requestBody.top_k = llmParams.top_k;
+      }
+    }
+
     const response = await fetch(`${API_BASE_URL}/chat/stream/resume`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        query,
-        stream: true,
-        session_id: sessionId,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

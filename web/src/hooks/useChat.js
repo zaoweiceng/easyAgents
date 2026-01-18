@@ -17,7 +17,7 @@ function extractAgentName(jsonObj) {
   return 'unknown_agent';
 }
 
-export const useChat = (initialSessionId = null) => {
+export const useChat = (initialSessionId = null, settings = null) => {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currentAgent, setCurrentAgent] = useState(null);
@@ -314,7 +314,8 @@ export const useChat = (initialSessionId = null) => {
             // 不立即清空agent状态，让用户看到完整的agent信息
           },
         },
-        sessionId
+        sessionId,
+        settings?.llmParams
       );
     } catch (err) {
       setError(err.message);
@@ -517,7 +518,8 @@ export const useChat = (initialSessionId = null) => {
             }
           },
         },
-        sessionId
+        sessionId,
+        settings?.llmParams
       );
     } catch (err) {
       setError(err.message);

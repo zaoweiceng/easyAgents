@@ -40,7 +40,7 @@ export const Chat = ({
     clearMessages,
     loadConversation,
     setSessionId,
-  } = useChat(currentSessionId);
+  } = useChat(currentSessionId, settings);
 
   // 自动滚动到底部
   const scrollToBottom = () => {

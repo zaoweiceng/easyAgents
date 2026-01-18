@@ -29,6 +29,33 @@ class Settings(BaseSettings):
         description="LLM模型名称"
     )
 
+    # LLM参数配置
+    LLM_TEMPERATURE: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=2.0,
+        description="LLM温度参数（控制随机性，0-2）"
+    )
+
+    LLM_TOP_P: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="LLM top_p参数（核采样，0-1）"
+    )
+
+    LLM_TOP_K: int = Field(
+        default=40,
+        ge=1,
+        description="LLM top_k参数（保留前k个概率最高的词，默认40）"
+    )
+
+    LLM_STREAM_CHUNK_SIZE: int = Field(
+        default=10,
+        ge=1,
+        description="流式输出时每N个delta记录一次日志（控制日志详细程度）"
+    )
+
     # Agent配置
     PLUGIN_DIR: str = Field(
         default="plugin",
@@ -179,7 +206,11 @@ class AppConfig:
         return {
             "base_url": self.settings.LLM_BASE_URL,
             "api_key": self.settings.LLM_API_KEY,
-            "model_name": self.settings.LLM_MODEL_NAME
+            "model_name": self.settings.LLM_MODEL_NAME,
+            "temperature": self.settings.LLM_TEMPERATURE,
+            "top_p": self.settings.LLM_TOP_P,
+            "top_k": self.settings.LLM_TOP_K,
+            "stream_chunk_size": self.settings.LLM_STREAM_CHUNK_SIZE
         }
 
     def get_agent_config(self) -> dict:

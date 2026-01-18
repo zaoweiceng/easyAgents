@@ -11,6 +11,11 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settings, setSettings] = useState({
     chatMode: 'stream', // 'sync' or 'stream'
+    llmParams: {  // LLM参数
+      temperature: 0.7,
+      top_p: 0.9,
+      top_k: 40
+    }
   });
   const [titleUpdate, setTitleUpdate] = useState(null); // 保存标题更新信息
   const [isCurrentConversationEmpty, setIsCurrentConversationEmpty] = useState(true); // 当前会话是否为空

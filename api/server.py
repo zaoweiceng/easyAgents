@@ -376,6 +376,14 @@ async def chat_stream(request: ChatRequest):
     if agent_manager is None:
         raise HTTPException(status_code=503, detail="服务未初始化")
 
+    # 如果请求中包含LLM参数，设置到agent_manager
+    if any([request.temperature is not None, request.top_p is not None, request.top_k is not None]):
+        agent_manager.set_llm_params(
+            temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k
+        )
+
     db = get_db()
 
     # 如果没有 session_id，创建新会话
@@ -614,6 +622,14 @@ async def chat_stream_resume(request: ChatRequest):
     """
     if agent_manager is None:
         raise HTTPException(status_code=503, detail="服务未初始化")
+
+    # 如果请求中包含LLM参数，设置到agent_manager
+    if any([request.temperature is not None, request.top_p is not None, request.top_k is not None]):
+        agent_manager.set_llm_params(
+            temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k
+        )
 
     db = get_db()
 
@@ -1152,6 +1168,27 @@ async def get_model_config():
         raise HTTPException(status_code=500, detail="获取配置失败")
 
 
+@app.get("/api/config/llm-params", tags=["配置"])
+async def get_llm_params():
+    """
+    获取当前LLM参数配置
+    直接从config读取，确保返回最新的配置文件内容
+    """
+    try:
+        # 直接从config读取，而不是从agent_manager读取
+        # 这样即使修改了.env文件（未重启服务），也能获取最新配置
+        llm_config = config.get_llm_config()
+        return {
+            "temperature": llm_config.get("temperature", 0.7),
+            "top_p": llm_config.get("top_p", 0.9),
+            "top_k": llm_config.get("top_k", 40),
+            "stream_chunk_size": llm_config.get("stream_chunk_size", 10)
+        }
+    except Exception as e:
+        logger.error(f"获取LLM参数失败: {e}")
+        raise HTTPException(status_code=500, detail="获取参数失败")
+
+
 @app.post("/api/config/model", tags=["配置"])
 async def update_model_config(request: Request):
     """
@@ -1173,11 +1210,42 @@ async def update_model_config(request: Request):
         # 读取.env文件
         env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 
+        # 如果.env文件不存在，创建默认的.env文件
         if not os.path.exists(env_path):
-            raise HTTPException(
-                status_code=404,
-                detail=".env文件不存在"
-            )
+            default_env_content = """# easyAgent 配置文件
+# 自动生成的配置文件
+
+# LLM服务配置
+LLM_BASE_URL=http://127.0.0.1:9999/v1
+LLM_API_KEY=your-api-key-here
+LLM_MODEL_NAME=openai/gpt-oss-20b
+
+# LLM参数配置
+LLM_TEMPERATURE=1.0
+LLM_TOP_P=1.0
+LLM_TOP_K=40
+LLM_STREAM_CHUNK_SIZE=10
+
+# Agent配置
+PLUGIN_DIR=plugin
+START_AGENT_NAME=entrance_agent
+END_AGENT_NAME=general_agent
+MAX_RETRIES=3
+
+# MCP配置
+MCP_ENABLED=false
+
+# 日志配置
+LOG_LEVEL=INFO
+
+# 应用配置
+APP_NAME=easyAgent
+APP_VERSION=0.1.1
+DEBUG=false
+"""
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.write(default_env_content)
+            logger.info(f"已创建默认的.env文件: {env_path}")
 
         # 读取现有内容
         with open(env_path, 'r', encoding='utf-8') as f:
@@ -1227,6 +1295,126 @@ async def update_model_config(request: Request):
     except Exception as e:
         logger.error(f"更新模型配置失败: {e}")
         raise HTTPException(status_code=500, detail="保存配置失败")
+
+
+@app.post("/api/config/llm-params", tags=["配置"])
+async def update_llm_params(request: Request):
+    """
+    更新LLM参数并保存到.env文件
+    """
+    try:
+        data = await request.json()
+
+        temperature = data.get("temperature")
+        top_p = data.get("top_p")
+        top_k = data.get("top_k")
+        stream_chunk_size = data.get("stream_chunk_size")
+
+        # 读取.env文件
+        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+
+        # 如果.env文件不存在，创建默认的.env文件
+        if not os.path.exists(env_path):
+            default_env_content = """# easyAgent 配置文件
+# 自动生成的配置文件
+
+# LLM服务配置
+LLM_BASE_URL=http://127.0.0.1:9999/v1
+LLM_API_KEY=your-api-key-here
+LLM_MODEL_NAME=openai/gpt-oss-20b
+
+# LLM参数配置
+LLM_TEMPERATURE=1.0
+LLM_TOP_P=1.0
+LLM_TOP_K=40
+LLM_STREAM_CHUNK_SIZE=10
+
+# Agent配置
+PLUGIN_DIR=plugin
+START_AGENT_NAME=entrance_agent
+END_AGENT_NAME=general_agent
+MAX_RETRIES=3
+
+# MCP配置
+MCP_ENABLED=false
+
+# 日志配置
+LOG_LEVEL=INFO
+
+# 应用配置
+APP_NAME=easyAgent
+APP_VERSION=0.1.1
+DEBUG=false
+"""
+            with open(env_path, 'w', encoding='utf-8') as f:
+                f.write(default_env_content)
+            logger.info(f"已创建默认的.env文件: {env_path}")
+
+        # 读取现有内容
+        with open(env_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        # 更新配置
+        updated_lines = []
+        params_updated = set()
+
+        for line in lines:
+            original_line = line
+            stripped_line = line.strip()
+
+            # 更新 LLM_TEMPERATURE
+            if temperature is not None and stripped_line.startswith("LLM_TEMPERATURE="):
+                updated_lines.append(f'LLM_TEMPERATURE={temperature}\n')
+                params_updated.add("temperature")
+            # 更新 LLM_TOP_P
+            elif top_p is not None and stripped_line.startswith("LLM_TOP_P="):
+                updated_lines.append(f'LLM_TOP_P={top_p}\n')
+                params_updated.add("top_p")
+            # 更新 LLM_TOP_K
+            elif top_k is not None and stripped_line.startswith("LLM_TOP_K="):
+                updated_lines.append(f'LLM_TOP_K={top_k}\n')
+                params_updated.add("top_k")
+            # 更新 LLM_STREAM_CHUNK_SIZE
+            elif stream_chunk_size is not None and stripped_line.startswith("LLM_STREAM_CHUNK_SIZE="):
+                updated_lines.append(f'LLM_STREAM_CHUNK_SIZE={stream_chunk_size}\n')
+                params_updated.add("stream_chunk_size")
+            else:
+                updated_lines.append(original_line)
+
+        # 如果某个参数不存在且需要更新，添加到文件末尾
+        if temperature is not None and "temperature" not in params_updated:
+            updated_lines.append(f'LLM_TEMPERATURE={temperature}\n')
+        if top_p is not None and "top_p" not in params_updated:
+            updated_lines.append(f'LLM_TOP_P={top_p}\n')
+        if top_k is not None and "top_k" not in params_updated:
+            updated_lines.append(f'LLM_TOP_K={top_k}\n')
+        if stream_chunk_size is not None and "stream_chunk_size" not in params_updated:
+            updated_lines.append(f'LLM_STREAM_CHUNK_SIZE={stream_chunk_size}\n')
+
+        # 写回文件
+        with open(env_path, 'w', encoding='utf-8') as f:
+            f.writelines(updated_lines)
+
+        # 同时更新agent_manager的参数（立即生效）
+        if agent_manager:
+            agent_manager.set_llm_params(
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k
+            )
+
+        logger.info(f"LLM参数已更新: temperature={temperature}, top_p={top_p}, top_k={top_k}")
+
+        return {
+            "status": "success",
+            "message": "LLM参数已保存"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新LLM参数失败: {e}")
+        raise HTTPException(status_code=500, detail="保存参数失败")
 
 
 # ============================================================================
