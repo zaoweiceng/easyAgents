@@ -2,10 +2,11 @@
  * Chat Component - 聊天界面组件（ChatGPT风格）
  */
 import { useState, useRef, useEffect } from 'react';
-import { Menu, Settings, Send, Bot, Plus, Paperclip, X } from 'lucide-react';
+import { Menu, Settings, Send, Bot, Plus, Paperclip, X, Folder } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
 import { SettingsModal } from './SettingsModal';
 import { AgentModal } from './AgentModal';
+import { FileManagementModal } from './FileManagementModal';
 import { ThinkingProcess } from './ThinkingProcess';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { uploadFile } from '../services/api';
@@ -25,6 +26,7 @@ export const Chat = ({
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [showAgent, setShowAgent] = useState(false);
+  const [showFileManagement, setShowFileManagement] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef(null);
@@ -160,6 +162,9 @@ export const Chat = ({
         </div>
 
         <div className="header-right">
+          <button className="icon-btn" onClick={() => setShowFileManagement(true)} title="文件管理">
+            <Folder size={20} />
+          </button>
           <button className="icon-btn" onClick={() => setShowAgent(true)} title="Agent列表">
             <Bot size={20} />
           </button>
@@ -308,6 +313,12 @@ export const Chat = ({
         isOpen={showAgent}
         onClose={() => setShowAgent(false)}
         currentAgentName={currentAgent?.agent_name || null}
+      />
+
+      {/* File Management Modal */}
+      <FileManagementModal
+        isOpen={showFileManagement}
+        onClose={() => setShowFileManagement(false)}
       />
     </div>
   );
