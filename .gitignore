@@ -80,3 +80,4 @@ doc/
 mcp_config.json  # 包含敏感信息的MCP配置
 
 test/
+*.bak
