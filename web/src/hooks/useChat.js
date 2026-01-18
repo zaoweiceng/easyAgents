@@ -608,9 +608,9 @@ export const useChat = (initialSessionId = null) => {
             }
           }
 
-          // 过滤掉 entrance_agent 和 general_agent，只显示有实际工作的 agent
+          // 过滤掉 general_agent（它是最终输出），显示其他agent包括entrance_agent
           thinkingSteps = thinkingSteps.filter(step =>
-            step.agent_name !== 'entrance_agent' && step.agent_name !== 'general_agent'
+            step.agent_name !== 'general_agent'
           );
         }
 
