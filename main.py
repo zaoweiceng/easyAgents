@@ -32,10 +32,10 @@ def run_api_server(mode='production', host='0.0.0.0', port=8000):
     # 检查环境
     try:
         import fastapi
-        print(f"\n✓ FastAPI版本: {fastapi.__version__}")
-        print(f"✓ Uvicorn版本: {uvicorn.__version__}")
+        print(f"\n[OK] FastAPI version: {fastapi.__version__}")
+        print(f"[OK] Uvicorn version: {uvicorn.__version__}")
     except ImportError as e:
-        print(f"\n✗ 缺少依赖: {e}")
+        print(f"\n[ERROR] Missing dependency: {e}")
         print("\n请先安装依赖:")
         print("  pip install -r requirements_api.txt")
         return 1
@@ -44,24 +44,24 @@ def run_api_server(mode='production', host='0.0.0.0', port=8000):
     if mode == 'development':
         # 开发模式（自动重载）
         reload = True
-        print(f"\n🚀 启动开发模式: http://{host}:{port}")
-        print(f"📚 API文档: http://{host}:{port}/docs")
-        print("\n⚡ 自动重载已启用")
-        print("按 Ctrl+C 停止服务器\n")
+        print(f"\n[>>] Starting development mode: http://{host}:{port}")
+        print(f"[BOOK] API docs: http://{host}:{port}/docs")
+        print("\n[Auto-reload enabled]")
+        print("Press Ctrl+C to stop the server\n")
 
     elif mode == 'production':
         # 生产模式（默认）- 使用单进程
         reload = False
-        print(f"\n🚀 启动生产模式: http://localhost:{port}")
-        print(f"📚 API文档: http://localhost:{port}/docs")
-        print("按 Ctrl+C 停止服务器\n")
+        print(f"\n[>>] Starting production mode: http://localhost:{port}")
+        print(f"[BOOK] API docs: http://localhost:{port}/docs")
+        print("Press Ctrl+C to stop the server\n")
 
     else:  # custom
         # 自定义模式
         reload = False
-        print(f"\n🚀 启动自定义配置: http://{host}:{port}")
-        print(f"📚 API文档: http://localhost:{port}/docs")
-        print("\n按 Ctrl+C 停止服务器\n")
+        print(f"\n[>>] Starting custom mode: http://{host}:{port}")
+        print(f"[BOOK] API docs: http://localhost:{port}/docs")
+        print("\nPress Ctrl+C to stop the server\n")
 
     print("=" * 70)
 
@@ -110,8 +110,8 @@ def run_api_server(mode='production', host='0.0.0.0', port=8000):
                 host=host,
                 port=port,
                 reload=False,
-                log_level="error",
-                access_log=False
+                log_level="info",
+                access_log=True
             )
     except KeyboardInterrupt:
         # 用户主动停止，不做任何处理
@@ -119,20 +119,20 @@ def run_api_server(mode='production', host='0.0.0.0', port=8000):
     except OSError as e:
         # 端口占用等系统错误
         if e.errno == 48:  # Address already in use
-            print(f"\n⚠️  端口 {port} 已被占用")
-            print(f"提示：使用 'lsof -ti:{port} | xargs kill -9' 清理端口")
+            print(f"\n[WARNING] Port {port} is already in use")
+            print(f"Hint: Use 'netstat -ano | findstr :{port}' to find the process")
         else:
-            print(f"\n❌ 系统错误: {e}")
+            print(f"\n[ERROR] System error: {e}")
         return 1
     except Exception as e:
         # 其他未知错误
-        print(f"\n❌ 运行错误: {e}")
+        print(f"\n[ERROR] Runtime error: {e}")
         return 1
     finally:
         # 显示退出信息
         print("\n" + "=" * 70)
-        print("✅ 服务已停止")
-        print("👋 感谢使用 easyAgent！")
+        print("[OK] Service stopped")
+        print("Thanks for using easyAgent!")
         print("=" * 70)
 
     return 0
@@ -190,7 +190,7 @@ def run_cli_mode(args):
 
         for agent_name in active_agents.keys():
             agent = agent_manager.agents[agent_name]
-            status = "✓ 活跃" if agent.is_active else "✗ 不活跃"
+            status = "[Active]" if agent.is_active else "[Inactive]"
             logger.info(f"  - {agent_name}: {status}")
 
         # 预设查询示例
@@ -234,11 +234,11 @@ def run_cli_mode(args):
                 elif event_type == "agent_end":
                     agent_name = event["data"]["agent_name"]
                     status = event["data"]["status"]
-                    print(f"\n✓ {agent_name} 完成 ({status})", flush=True)
+                    print(f"\n[OK] {agent_name} completed ({status})", flush=True)
 
                 elif event_type == "error":
                     error_msg = event["data"]["error_message"]
-                    print(f"\n✗ 错误: {error_msg}", flush=True)
+                    print(f"\n[ERROR] {error_msg}", flush=True)
 
                 elif event_type == "metadata":
                     # 元数据（可选显示）

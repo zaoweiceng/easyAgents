@@ -86,6 +86,31 @@ class DatabaseService:
                 ON messages(created_at)
             """)
 
+            # 文件记录表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_id TEXT UNIQUE NOT NULL,
+                    original_filename TEXT NOT NULL,
+                    stored_filename TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    content_type TEXT NOT NULL,
+                    session_id TEXT,
+                    metadata TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_files_file_id
+                ON files(file_id)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_files_session_id
+                ON files(session_id)
+            """)
+
             conn.commit()
 
     # Conversation 相关方法
@@ -339,6 +364,102 @@ class DatabaseService:
                 )
                 conn.commit()
                 return True
+
+    # File 相关方法
+    def save_file_record(
+        self,
+        file_id: str,
+        original_filename: str,
+        stored_filename: str,
+        file_path: str,
+        file_size: int,
+        content_type: str,
+        session_id: str = None,
+        metadata: Dict = None
+    ) -> bool:
+        """保存文件记录"""
+        with self._lock:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO files
+                    (file_id, original_filename, stored_filename, file_path, file_size, content_type, session_id, metadata)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        file_id,
+                        original_filename,
+                        stored_filename,
+                        file_path,
+                        file_size,
+                        content_type,
+                        session_id,
+                        json.dumps(metadata, ensure_ascii=False) if metadata else None
+                    )
+                )
+                conn.commit()
+                return True
+
+    def get_file_record(self, file_id: str) -> Optional[Dict]:
+        """获取文件记录"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT * FROM files WHERE file_id = ?",
+                (file_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                record = dict(row)
+                # 解析 metadata JSON
+                if record.get('metadata'):
+                    try:
+                        record['metadata'] = json.loads(record['metadata'])
+                    except json.JSONDecodeError:
+                        record['metadata'] = {}
+                return record
+            return None
+
+    def list_file_records(
+        self,
+        session_id: str = None,
+        limit: int = 100
+    ) -> List[Dict]:
+        """列出文件记录"""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            if session_id:
+                cursor = conn.execute(
+                    "SELECT * FROM files WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+                    (session_id, limit)
+                )
+            else:
+                cursor = conn.execute(
+                    "SELECT * FROM files ORDER BY created_at DESC LIMIT ?",
+                    (limit,)
+                )
+            rows = cursor.fetchall()
+            records = []
+            for row in rows:
+                record = dict(row)
+                if record.get('metadata'):
+                    try:
+                        record['metadata'] = json.loads(record['metadata'])
+                    except json.JSONDecodeError:
+                        record['metadata'] = {}
+                records.append(record)
+            return records
+
+    def delete_file_record(self, file_id: str) -> bool:
+        """删除文件记录"""
+        with self._lock:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "DELETE FROM files WHERE file_id = ?",
+                    (file_id,)
+                )
+                conn.commit()
+                return cursor.rowcount > 0
 
     def _extract_thinking_steps(self, events: List[Dict]) -> List[Dict]:
         """从events中提取思考步骤"""

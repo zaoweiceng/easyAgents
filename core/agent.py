@@ -6,6 +6,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# 导入文件服务（延迟导入避免循环依赖）
+
+
+def get_file_service():
+    """获取文件服务实例"""
+    from .file_service import get_file_service as _get_file_service
+    return _get_file_service()
+
 
 def normalize_agent_output(
     result: Union[Message, Dict[str, Any], Any],
@@ -244,6 +252,197 @@ class Agent(BaseModel):
             # 同步模式：自动封装输出
             result = self.run(message)
             return normalize_agent_output(result, message, self.name)
+
+    # ========================================================================
+    # 文件操作辅助方法
+    # ========================================================================
+
+    def upload_file(
+        self,
+        file_path: str,
+        session_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        上传文件到文件服务
+
+        Args:
+            file_path: 文件路径
+            session_id: 会话ID (可选)
+            metadata: 额外的元数据 (可选)
+
+        Returns:
+            文件信息字典
+
+        Example:
+            def run(self, message: Message):
+                # 上传文件
+                file_info = self.upload_file("/path/to/file.pdf", session_id="session-123")
+
+                # 返回结果
+                return {
+                    "file_id": file_info["file_id"],
+                    "message": "文件上传成功"
+                }
+        """
+        try:
+            from fastapi import UploadFile
+
+            # 创建模拟的UploadFile对象
+            import os
+            filename = os.path.basename(file_path)
+
+            # 读取文件内容
+            with open(file_path, 'rb') as f:
+                content = f.read()
+
+            # 创建临时的UploadFile-like对象
+            class TempUploadFile:
+                def __init__(self, filename, content):
+                    self.filename = filename
+                    self.content_type = "application/octet-stream"
+                    self._content = content
+
+                async def read(self):
+                    return self._content
+
+            # 异步上传
+            import asyncio
+            file_service = get_file_service()
+
+            temp_file = TempUploadFile(filename, content)
+            file_record = asyncio.get_event_loop().run_until_complete(
+                file_service.upload_file(temp_file, session_id, metadata)
+            )
+
+            return file_record.to_dict()
+
+        except Exception as e:
+            logger.error(f"文件上传失败: {e}")
+            return {"error": str(e)}
+
+    def create_download_file(
+        self,
+        content: Union[str, bytes],
+        filename: str,
+        content_type: str = "application/octet-stream",
+        session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        创建可供下载的文件
+
+        Args:
+            content: 文件内容 (字符串或字节)
+            filename: 文件名
+            content_type: MIME类型
+            session_id: 会话ID (可选)
+
+        Returns:
+            文件信息字典，包含file_id可用于下载
+
+        Example:
+            def run(self, message: Message):
+                # 生成CSV内容
+                csv_content = "Name,Age\\nAlice,30\\nBob,25"
+
+                # 创建下载文件
+                file_info = self.create_download_file(
+                    content=csv_content,
+                    filename="report.csv",
+                    content_type="text/csv",
+                    session_id=message.session_id
+                )
+
+                return {
+                    "message": "报告已生成",
+                    "download_url": f"/files/{file_info['file_id']}"
+                }
+        """
+        try:
+            import asyncio
+            file_service = get_file_service()
+
+            file_record = asyncio.get_event_loop().run_until_complete(
+                file_service.create_download_file(
+                    content=content,
+                    filename=filename,
+                    content_type=content_type,
+                    session_id=session_id
+                )
+            )
+
+            logger.info(f"创建下载文件成功: {filename} -> {file_record.file_id}")
+            return file_record.to_dict()
+
+        except Exception as e:
+            logger.error(f"创建下载文件失败: {e}")
+            return {"error": str(e)}
+
+    def get_file(self, file_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取文件信息
+
+        Args:
+            file_id: 文件ID
+
+        Returns:
+            文件信息字典或None
+        """
+        try:
+            file_service = get_file_service()
+            file_record = file_service.get_file(file_id)
+
+            if file_record:
+                return file_record.to_dict()
+            return None
+
+        except Exception as e:
+            logger.error(f"获取文件信息失败: {e}")
+            return None
+
+    def read_file_content(self, file_path: str) -> Optional[str]:
+        """
+        读取文件内容（文本文件）
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            文件内容字符串或None
+
+        Example:
+            def run(self, message: Message):
+                # 读取上传的PDF文本内容
+                content = self.read_file_content("/path/to/document.txt")
+
+                if content:
+                    return {"content": content}
+                else:
+                    return {"error": "无法读取文件"}
+        """
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"读取文件失败: {e}")
+            return None
+
+    def read_file_binary(self, file_path: str) -> Optional[bytes]:
+        """
+        读取文件内容（二进制）
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            文件内容字节或None
+        """
+        try:
+            with open(file_path, 'rb') as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"读取文件失败: {e}")
+            return None
 
 class AgentLoader:
     """Agent 加载器类"""

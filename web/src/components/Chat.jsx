@@ -2,12 +2,13 @@
  * Chat Component - 聊天界面组件（ChatGPT风格）
  */
 import { useState, useRef, useEffect } from 'react';
-import { Menu, Settings, Send, Bot, Plus } from 'lucide-react';
+import { Menu, Settings, Send, Bot, Plus, Paperclip, X } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
 import { SettingsModal } from './SettingsModal';
 import { AgentModal } from './AgentModal';
 import { ThinkingProcess } from './ThinkingProcess';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { uploadFile } from '../services/api';
 import './Chat.css';
 
 export const Chat = ({
@@ -24,8 +25,11 @@ export const Chat = ({
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [showAgent, setShowAgent] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const {
     messages,
@@ -84,16 +88,54 @@ export const Chat = ({
   }, [messages.length, onMessageCountChange]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if ((!input.trim() && attachedFiles.length === 0) || isLoading) return;
 
     const query = input.trim();
     setInput('');
 
-    if (settings.chatMode === 'sync') {
-      await sendSyncMessage(query);
-    } else {
-      await sendStreamMessage(query);
+    // 如果有附件，在消息中包含文件信息
+    let message = query;
+    if (attachedFiles.length > 0) {
+      const fileInfos = attachedFiles.map(f => `[文件: ${f.original_filename}, ID: ${f.file_id}]`).join('\n');
+      message = query ? `${query}\n\n${fileInfos}` : fileInfos;
     }
+
+    if (settings.chatMode === 'sync') {
+      await sendSyncMessage(message);
+    } else {
+      await sendStreamMessage(message);
+    }
+
+    // 清空附件
+    setAttachedFiles([]);
+  };
+
+  // 处理文件选择
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+
+    setUploading(true);
+
+    try {
+      for (const file of files) {
+        const result = await uploadFile(file, sessionId);
+        setAttachedFiles(prev => [...prev, result.file]);
+      }
+    } catch (error) {
+      console.error('文件上传失败:', error);
+      alert(`文件上传失败: ${error.message}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // 移除附件
+  const removeAttachment = (fileId) => {
+    setAttachedFiles(prev => prev.filter(f => f.file_id !== fileId));
   };
 
   const handleKeyPress = (e) => {
@@ -195,7 +237,41 @@ export const Chat = ({
 
       {/* Input Container */}
       <div className="input-container">
+        {/* 附件列表 */}
+        {attachedFiles.length > 0 && (
+          <div className="attachments-list">
+            {attachedFiles.map(file => (
+              <div key={file.file_id} className="attachment-item">
+                <Paperclip size={16} />
+                <span className="attachment-name">{file.original_filename}</span>
+                <button
+                  className="attachment-remove"
+                  onClick={() => removeAttachment(file.file_id)}
+                  title="移除"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="input-wrapper">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+          <button
+            className="attach-button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            title="上传文件"
+          >
+            <Paperclip size={20} />
+          </button>
           <textarea
             ref={textareaRef}
             className="message-input"
@@ -203,15 +279,15 @@ export const Chat = ({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyPress}
             placeholder="输入您的问题... (按Enter发送，Shift+Enter换行)"
-            disabled={isLoading}
+            disabled={isLoading || uploading}
             rows={1}
           />
           <button
             className="send-button"
             onClick={handleSend}
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || uploading || (!input.trim() && attachedFiles.length === 0)}
           >
-            <Send size={20} />
+            {uploading ? '上传中...' : <Send size={20} />}
           </button>
         </div>
         <div className="input-footer">

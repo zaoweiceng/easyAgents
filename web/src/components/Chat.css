@@ -226,6 +226,56 @@
   background: white;
 }
 
+/* 附件列表 */
+.attachments-list {
+  max-width: 800px;
+  margin: 0 auto 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #f3f4f6;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  font-size: 13px;
+}
+
+.attachment-item svg {
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.attachment-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #374151;
+}
+
+.attachment-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.attachment-remove:hover {
+  background: #e5e7eb;
+  color: #ef4444;
+}
+
 .input-wrapper {
   max-width: 800px;
   margin: 0 auto;
@@ -252,6 +302,29 @@
 
 .message-input:focus {
   outline: none;
+}
+
+.attach-button {
+  padding: 8px;
+  background: transparent;
+  color: #6b7280;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attach-button:hover:not(:disabled) {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.attach-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .send-button {

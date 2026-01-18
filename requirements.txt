@@ -12,6 +12,7 @@ aiohttp>=3.9.0  # 用于SSE传输（远端MCP服务器）
 fastapi>=0.100.0
 uvicorn[standard]>=0.23.0
 python-multipart>=0.0.6
+aiofiles>=23.0.0  # 异步文件操作
 
 # 其他有用的库
 python-dotenv>=1.0.0  # 用于环境变量管理

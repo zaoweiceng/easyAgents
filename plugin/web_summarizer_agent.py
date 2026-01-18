@@ -95,7 +95,7 @@ class WebSummarizerAgent(Agent):
 
     # HTTP请求头配置
     _headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
 
     # Playwright可用性标志
@@ -104,7 +104,7 @@ class WebSummarizerAgent(Agent):
     def __init__(self):
         super().__init__(
             name="web_summarizer_agent",
-            description="专门用于获取和格式化网页内容，支持JavaScript动态渲染。可以爬取指定网页的内容，进行格式化处理，然后传递给general_agent进行智能总结。适用于新闻文章、博客、社区、单页应用等各类网页。",
+            description="专门用于获取和格式化网页内容，或者http请求的内容。可以爬取指定网页的内容，进行格式化处理，然后传递给general_agent进行智能总结。",
             handles=[
                 "总结网页", "网页总结", "网页内容",
                 "爬取网页", "获取网页", "抓取网页",

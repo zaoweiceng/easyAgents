@@ -298,3 +298,99 @@ class ConversationResponse(BaseModel):
                 }
             }
         }
+
+
+# ============================================================================
+# 文件管理相关模型
+# ============================================================================
+
+class FileInfo(BaseModel):
+    """文件信息模型"""
+    file_id: str = Field(..., description="文件唯一标识")
+    original_filename: str = Field(..., description="原始文件名")
+    stored_filename: str = Field(..., description="存储文件名")
+    file_size: int = Field(..., description="文件大小(字节)")
+    content_type: str = Field(..., description="文件MIME类型")
+    session_id: Optional[str] = Field(None, description="关联的会话ID")
+    created_at: str = Field(..., description="上传时间")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="额外元数据")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "file_id": "uuid-123",
+                "original_filename": "document.pdf",
+                "stored_filename": "uuid-123.pdf",
+                "file_size": 1024000,
+                "content_type": "application/pdf",
+                "session_id": "session-abc",
+                "created_at": "2024-01-01T00:00:00",
+                "metadata": {}
+            }
+        }
+
+
+class FileUploadResponse(BaseModel):
+    """文件上传响应"""
+    status: str = Field(..., description="响应状态")
+    message: str = Field(..., description="响应消息")
+    file: FileInfo = Field(..., description="文件信息")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "message": "文件上传成功",
+                "file": {
+                    "file_id": "uuid-123",
+                    "original_filename": "document.pdf",
+                    "stored_filename": "uuid-123.pdf",
+                    "file_size": 1024000,
+                    "content_type": "application/pdf",
+                    "session_id": "session-abc",
+                    "created_at": "2024-01-01T00:00:00",
+                    "metadata": {}
+                }
+            }
+        }
+
+
+class FileListResponse(BaseModel):
+    """文件列表响应"""
+    status: str = Field(..., description="响应状态")
+    total: int = Field(..., description="文件总数")
+    files: List[FileInfo] = Field(..., description="文件列表")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "total": 2,
+                "files": [
+                    {
+                        "file_id": "uuid-123",
+                        "original_filename": "document.pdf",
+                        "stored_filename": "uuid-123.pdf",
+                        "file_size": 1024000,
+                        "content_type": "application/pdf",
+                        "session_id": "session-abc",
+                        "created_at": "2024-01-01T00:00:00",
+                        "metadata": {}
+                    }
+                ]
+            }
+        }
+
+
+class FileDeleteResponse(BaseModel):
+    """文件删除响应"""
+    status: str = Field(..., description="响应状态")
+    message: str = Field(..., description="响应消息")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "message": "文件删除成功"
+            }
+        }

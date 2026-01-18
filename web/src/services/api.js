@@ -334,3 +334,121 @@ export default {
   chatSync,
   chatStream,
 };
+
+/**
+ * ============================================================================
+ * 文件管理API
+ * ============================================================================
+ */
+
+/**
+ * 上传文件
+ * @param {File} file - 要上传的文件对象
+ * @param {string} sessionId - 会话ID（可选）
+ * @returns {Promise<Object>} 文件信息
+ */
+export const uploadFile = async (file, sessionId = null) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let url = `${API_BASE_URL}/files/upload`;
+  if (sessionId) {
+    url += `?session_id=${encodeURIComponent(sessionId)}`;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || '文件上传失败');
+  }
+
+  return response.json();
+};
+
+/**
+ * 下载文件
+ * @param {string} fileId - 文件ID
+ * @returns {Promise<Blob>} 文件内容
+ */
+export const downloadFile = async (fileId) => {
+  const response = await fetch(`${API_BASE_URL}/files/${fileId}`);
+
+  if (!response.ok) {
+    throw new Error('文件下载失败');
+  }
+
+  return response.blob();
+};
+
+/**
+ * 获取文件列表
+ * @param {string} sessionId - 会话ID（可选，用于过滤）
+ * @param {number} limit - 最大返回数量
+ * @returns {Promise<Object>} 文件列表
+ */
+export const getFiles = async (sessionId = null, limit = 100) => {
+  let url = `${API_BASE_URL}/files?limit=${limit}`;
+  if (sessionId) {
+    url += `&session_id=${encodeURIComponent(sessionId)}`;
+  }
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('获取文件列表失败');
+  }
+
+  return response.json();
+};
+
+/**
+ * 获取文件信息
+ * @param {string} fileId - 文件ID
+ * @returns {Promise<Object>} 文件信息
+ */
+export const getFileInfo = async (fileId) => {
+  const response = await fetch(`${API_BASE_URL}/files/${fileId}/info`);
+
+  if (!response.ok) {
+    throw new Error('获取文件信息失败');
+  }
+
+  return response.json();
+};
+
+/**
+ * 删除文件
+ * @param {string} fileId - 文件ID
+ * @returns {Promise<Object>} 删除结果
+ */
+export const deleteFile = async (fileId) => {
+  const response = await fetch(`${API_BASE_URL}/files/${fileId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error('删除文件失败');
+  }
+
+  return response.json();
+};
+
+/**
+ * 删除会话的所有文件
+ * @param {string} sessionId - 会话ID
+ * @returns {Promise<Object>} 删除结果
+ */
+export const deleteSessionFiles = async (sessionId) => {
+  const response = await fetch(`${API_BASE_URL}/files/session/${sessionId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error('删除会话文件失败');
+  }
+
+  return response.json();
+};

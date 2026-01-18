@@ -12,17 +12,19 @@ import uuid
 import asyncio
 from typing import Dict, Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Query
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from typing import Optional
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core import AgentManager
 from core.context_manager import context_manager
+from core.file_service import get_file_service
 from config import get_config
 from api.database import get_db
 from api.models import (
@@ -38,7 +40,11 @@ from api.models import (
     CreateConversationRequest,
     UpdateConversationTitleRequest,
     ConversationsListResponse,
-    ConversationResponse
+    ConversationResponse,
+    FileInfo,
+    FileUploadResponse,
+    FileListResponse,
+    FileDeleteResponse
 )
 
 # 配置日志
@@ -1449,6 +1455,186 @@ DEBUG=false
     except Exception as e:
         logger.error(f"更新LLM参数失败: {e}")
         raise HTTPException(status_code=500, detail="保存参数失败")
+
+
+# ============================================================================
+# 文件管理接口
+# ============================================================================
+
+@app.post("/files/upload", response_model=FileUploadResponse, tags=["文件管理"])
+async def upload_file(
+    file: UploadFile = File(..., description="要上传的文件"),
+    session_id: Optional[str] = Query(None, description="关联的会话ID")
+):
+    """
+    上传文件
+
+    支持上传各种类型的文件，包括PDF、Word、Excel、图片等。
+    上传的文件会关联到指定的会话（可选）。
+    """
+    try:
+        file_service = get_file_service()
+
+        # 上传文件
+        file_record = await file_service.upload_file(
+            file=file,
+            session_id=session_id
+        )
+
+        logger.info(
+            f"文件上传成功: {file_record.original_filename} "
+            f"({file_record.file_size} bytes) -> {file_record.file_id}"
+        )
+
+        return FileUploadResponse(
+            status="success",
+            message="文件上传成功",
+            file=FileInfo(**file_record.to_dict())
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文件上传失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
+
+
+@app.get("/files/{file_id}", tags=["文件管理"])
+async def download_file(file_id: str):
+    """
+    下载文件
+
+    通过文件ID下载对应的文件
+    """
+    try:
+        file_service = get_file_service()
+
+        # 获取文件路径
+        file_path = file_service.get_file_path(file_id)
+        if not file_path:
+            raise HTTPException(status_code=404, detail="文件不存在")
+
+        # 获取文件记录
+        file_record = file_service.get_file(file_id)
+        if not file_record:
+            raise HTTPException(status_code=404, detail="文件记录不存在")
+
+        logger.info(f"文件下载: {file_record.original_filename} ({file_id})")
+
+        # 返回文件
+        return FileResponse(
+            path=file_path,
+            filename=file_record.original_filename,
+            media_type=file_record.content_type
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文件下载失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文件下载失败: {str(e)}")
+
+
+@app.get("/files", response_model=FileListResponse, tags=["文件管理"])
+async def list_files(
+    session_id: Optional[str] = Query(None, description="过滤指定会话的文件"),
+    limit: int = Query(100, ge=1, le=1000, description="最大返回数量")
+):
+    """
+    获取文件列表
+
+    返回系统中已上传的文件列表，可按会话ID过滤
+    """
+    try:
+        file_service = get_file_service()
+
+        files = file_service.list_files(session_id=session_id, limit=limit)
+
+        return FileListResponse(
+            status="success",
+            total=len(files),
+            files=[FileInfo(**f.to_dict()) for f in files]
+        )
+
+    except Exception as e:
+        logger.error(f"获取文件列表失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取文件列表失败: {str(e)}")
+
+
+@app.get("/files/{file_id}/info", response_model=FileInfo, tags=["文件管理"])
+async def get_file_info(file_id: str):
+    """
+    获取文件信息
+
+    通过文件ID获取文件的详细信息
+    """
+    try:
+        file_service = get_file_service()
+
+        file_record = file_service.get_file(file_id)
+        if not file_record:
+            raise HTTPException(status_code=404, detail="文件不存在")
+
+        return FileInfo(**file_record.to_dict())
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取文件信息失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取文件信息失败: {str(e)}")
+
+
+@app.delete("/files/{file_id}", response_model=FileDeleteResponse, tags=["文件管理"])
+async def delete_file(file_id: str):
+    """
+    删除文件
+
+    通过文件ID删除文件及其记录
+    """
+    try:
+        file_service = get_file_service()
+
+        success = file_service.delete_file(file_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="文件不存在")
+
+        logger.info(f"文件删除成功: {file_id}")
+
+        return FileDeleteResponse(
+            status="success",
+            message="文件删除成功"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文件删除失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文件删除失败: {str(e)}")
+
+
+@app.delete("/files/session/{session_id}", tags=["文件管理"])
+async def delete_session_files(session_id: str):
+    """
+    删除会话相关文件
+
+    删除指定会话的所有文件
+    """
+    try:
+        file_service = get_file_service()
+
+        count = file_service.cleanup_session_files(session_id)
+
+        logger.info(f"会话 {session_id} 的 {count} 个文件已删除")
+
+        return {
+            "status": "success",
+            "message": f"已删除 {count} 个文件",
+            "count": count
+        }
+
+    except Exception as e:
+        logger.error(f"删除会话文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"删除会话文件失败: {str(e)}")
 
 
 # ============================================================================
