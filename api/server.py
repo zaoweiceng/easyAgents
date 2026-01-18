@@ -13,8 +13,9 @@ import asyncio
 from typing import Dict, Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 # 添加项目根目录到路径
@@ -123,6 +124,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ============================================================================
+# 前端静态文件服务
+# ============================================================================
+
+# 获取前端构建目录
+frontend_dist = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "web",
+    "dist"
+)
+
+# 挂载静态文件
+if os.path.exists(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+    logger.info(f"✓ 前端静态文件已挂载: {frontend_dist}")
+else:
+    logger.warning(f"⚠️  前端构建目录不存在: {frontend_dist}")
+    logger.warning("请先运行: cd web && npm run build")
 
 
 # ============================================================================
@@ -981,13 +1001,13 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 # ============================================================================
-# 根路径
+# 根路径和API信息
 # ============================================================================
 
-@app.get("/", tags=["系统"])
-async def root():
+@app.get("/api/info", tags=["系统"])
+async def api_info():
     """
-    根路径
+    API服务信息
 
     返回API服务的基本信息
     """
@@ -1015,6 +1035,58 @@ async def root():
 
 
 # ============================================================================
+# SPA前端路由支持
+# ============================================================================
+
+@app.get("/", include_in_schema=False)
+async def index():
+    """根路径：返回前端主页"""
+    index_path = os.path.join(frontend_dist, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    else:
+        return HTMLResponse(
+            content="<h1>前端未构建</h1><p>请先运行: <code>cd web && npm run build</code></p>",
+            status_code=503
+        )
+
+
+@app.get("/bot.svg", include_in_schema=False)
+async def favicon():
+    """返回favicon图标"""
+    bot_svg_path = os.path.join(frontend_dist, "bot.svg")
+    if os.path.exists(bot_svg_path):
+        return FileResponse(bot_svg_path, media_type="image/svg+xml")
+    return FileResponse(os.path.join(frontend_dist, "vite.svg"), media_type="image/svg+xml")
+
+
+@app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+async def catch_all(path: str):
+    """
+    Catch-all路由：返回前端index.html
+
+    支持React Router等前端路由
+    """
+    # 排除API路由和文档路由
+    if path.startswith("api") or path.startswith("docs") or path.startswith("redoc") or path.startswith("openapi.json"):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Not Found"}
+        )
+
+    # 返回index.html（支持React Router）
+    index_path = os.path.join(frontend_dist, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    else:
+        return HTMLResponse(
+            content="<h1>前端未构建</h1><p>请先运行: <code>cd web && npm run build</code></p>",
+            status_code=503
+        )
+
+
+# ============================================================================
 # 启动服务器
 # ============================================================================
 
@@ -1026,6 +1098,7 @@ if __name__ == "__main__":
     print("=" * 70)
     print("\n启动服务器...")
     print("\n访问地址:")
+    print("  - 前端界面: http://localhost:8000")
     print("  - API文档: http://localhost:8000/docs")
     print("  - API文档(ReDoc): http://localhost:8000/redoc")
     print("  - 健康检查: http://localhost:8000/health")
