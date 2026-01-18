@@ -42,7 +42,7 @@ core_instructions = \
 - "我想开发一个基于React的待办事项Web应用，需要支持用户登录、创建任务、设置截止日期" → general_agent（需求已明确）
 
 ## 其他专业Agent
-根据任务类型选择相应的专业Agent（如sql_agent等）
+根据任务类型选择相应的专业Agent，如果用户需求不够明确，请调用demand_agent进行澄清。
 """
 
 data_fields = \
