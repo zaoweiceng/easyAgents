@@ -526,6 +526,11 @@ async def chat_stream(request: ChatRequest):
                         response=full_response_content
                     )
 
+                    # 如果标题为空，使用默认标题
+                    if not new_title or not new_title.strip():
+                        new_title = "新对话"
+                        logger.info("生成的标题为空，使用默认标题: 新对话")
+
                     # 更新数据库中的会话标题
                     if db.update_conversation_title(session_id, new_title):
                         logger.info(f"✓ 会话标题已更新: {new_title}")
@@ -537,14 +542,36 @@ async def chat_stream(request: ChatRequest):
                                 "title_updated": True,
                                 "new_title": new_title,
                                 "session_id": session_id
-                            }
+                            },
+                            "metadata": {}
                         }
                         yield f"data: {json.dumps(title_update_event, ensure_ascii=False)}\n\n"
                     else:
                         logger.warning("更新会话标题失败")
+                        # 即使更新失败，也发送事件让前端使用默认标题
+                        title_update_event = {
+                            "type": "metadata",
+                            "data": {
+                                "title_updated": True,
+                                "new_title": "新对话",
+                                "session_id": session_id
+                            },
+                            "metadata": {}
+                        }
+                        yield f"data: {json.dumps(title_update_event, ensure_ascii=False)}\n\n"
                 except Exception as title_error:
                     logger.error(f"生成标题时出错: {title_error}")
-                    # 标题生成失败不影响主流程
+                    # 标题生成失败时，也发送事件让前端使用默认标题
+                    title_update_event = {
+                        "type": "metadata",
+                        "data": {
+                            "title_updated": True,
+                            "new_title": "新对话",
+                            "session_id": session_id
+                        },
+                        "metadata": {}
+                    }
+                    yield f"data: {json.dumps(title_update_event, ensure_ascii=False)}\n\n"
 
         except Exception as e:
             logger.error(f"流式聊天处理失败: {e}")
@@ -807,6 +834,11 @@ async def chat_stream_resume(request: ChatRequest):
                         response=full_response_content
                     )
 
+                    # 如果标题为空，使用默认标题
+                    if not new_title or not new_title.strip():
+                        new_title = "新对话"
+                        logger.info("生成的标题为空，使用默认标题: 新对话")
+
                     # 更新数据库中的会话标题
                     if db.update_conversation_title(session_id, new_title):
                         logger.info(f"✓ 会话标题已更新: {new_title}")
@@ -818,14 +850,36 @@ async def chat_stream_resume(request: ChatRequest):
                                 "title_updated": True,
                                 "new_title": new_title,
                                 "session_id": session_id
-                            }
+                            },
+                            "metadata": {}
                         }
                         yield f"data: {json.dumps(title_update_event, ensure_ascii=False)}\n\n"
                     else:
                         logger.warning("更新会话标题失败")
+                        # 即使更新失败，也发送事件让前端使用默认标题
+                        title_update_event = {
+                            "type": "metadata",
+                            "data": {
+                                "title_updated": True,
+                                "new_title": "新对话",
+                                "session_id": session_id
+                            },
+                            "metadata": {}
+                        }
+                        yield f"data: {json.dumps(title_update_event, ensure_ascii=False)}\n\n"
                 except Exception as title_error:
                     logger.error(f"生成标题时出错: {title_error}")
-                    # 标题生成失败不影响主流程
+                    # 标题生成失败时，也发送事件让前端使用默认标题
+                    title_update_event = {
+                        "type": "metadata",
+                        "data": {
+                            "title_updated": True,
+                            "new_title": "新对话",
+                            "session_id": session_id
+                        },
+                        "metadata": {}
+                    }
+                    yield f"data: {json.dumps(title_update_event, ensure_ascii=False)}\n\n"
 
             # 清除暂停上下文（只有在正常完成时）
             if not paused:

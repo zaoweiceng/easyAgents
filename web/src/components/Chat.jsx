@@ -17,7 +17,9 @@ export const Chat = ({
   onSettingsChange,
   currentSessionId,
   onTitleUpdate,
-  onNewChat
+  onNewChat,
+  onMessageCountChange,
+  currentTitle
 }) => {
   const [input, setInput] = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -73,6 +75,14 @@ export const Chat = ({
     }
   }, [titleUpdate, onTitleUpdate]);
 
+  // 监听messages数量变化，通知父组件
+  useEffect(() => {
+    if (onMessageCountChange) {
+      const hasMessages = messages.length > 0;
+      onMessageCountChange(hasMessages);
+    }
+  }, [messages.length, onMessageCountChange]);
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -104,7 +114,7 @@ export const Chat = ({
           <button className="icon-btn new-chat-btn" onClick={onNewChat} title="新建对话">
             <Plus size={20} />
           </button>
-          <h1>easyAgent</h1>
+          <h1>{currentTitle || 'easyAgent'}</h1>
         </div>
 
         <div className="header-right">
