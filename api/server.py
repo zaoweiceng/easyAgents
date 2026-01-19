@@ -1122,6 +1122,29 @@ async def export_conversation_pdf(session_id: str):
     )
 
 
+@app.delete("/conversations/{session_id}/messages/{message_id}", tags=["历史记录"])
+async def delete_message(session_id: str, message_id: int):
+    """
+    删除指定消息
+
+    通过消息ID删除单条消息
+    """
+    db = get_db()
+
+    # 获取会话
+    conv = db.get_conversation_by_session(session_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    # 删除消息
+    success = db.delete_message(message_id, conv['id'])
+
+    if not success:
+        raise HTTPException(status_code=404, detail="消息不存在")
+
+    return {"status": "success", "message": "消息删除成功"}
+
+
 # ============================================================================
 # 错误处理
 # ============================================================================

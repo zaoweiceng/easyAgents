@@ -73,14 +73,60 @@
 .message {
   padding: 24px 0;
   border-bottom: 1px solid transparent;
+  position: relative;
+  transition: background-color 0.2s;
+}
+
+.message:hover {
+  background-color: rgba(0, 0, 0, 0.02);
 }
 
 .message-user {
   background: #f7f7f8;
 }
 
+.message-user:hover {
+  background: #f0f0f1;
+}
+
 .message-assistant {
   background: white;
+}
+
+.message-assistant:hover {
+  background: #fafafa;
+}
+
+/* Delete Button */
+.message-delete-btn {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.message:hover .message-delete-btn {
+  opacity: 1;
+}
+
+.message-delete-btn:hover {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.message-delete-btn:active {
+  transform: scale(0.95);
 }
 
 .message-content {

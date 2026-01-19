@@ -452,3 +452,28 @@ export const deleteSessionFiles = async (sessionId) => {
 
   return response.json();
 };
+
+/**
+ * ============================================================================
+ * 消息管理API
+ * ============================================================================
+ */
+
+/**
+ * 删除指定消息
+ * @param {string} sessionId - 会话ID
+ * @param {number} messageId - 消息ID
+ * @returns {Promise<Object>} 删除结果
+ */
+export const deleteMessage = async (sessionId, messageId) => {
+  const response = await fetch(`${API_BASE_URL}/conversations/${sessionId}/messages/${messageId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || '删除消息失败');
+  }
+
+  return response.json();
+};

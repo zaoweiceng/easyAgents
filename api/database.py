@@ -291,6 +291,36 @@ class DatabaseService:
                 messages.append(msg)
             return messages
 
+    def delete_message(
+        self,
+        message_id: int,
+        conversation_id: int
+    ) -> bool:
+        """删除指定消息并更新会话消息计数"""
+        with self._lock:
+            with sqlite3.connect(self.db_path) as conn:
+                # 删除消息
+                cursor = conn.execute(
+                    "DELETE FROM messages WHERE id = ? AND conversation_id = ?",
+                    (message_id, conversation_id)
+                )
+                deleted = cursor.rowcount > 0
+
+                if deleted:
+                    # 更新会话的 message_count
+                    conn.execute(
+                        """
+                        UPDATE conversations
+                        SET message_count = message_count - 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (conversation_id,)
+                    )
+                    conn.commit()
+
+                return deleted
+
     def export_conversation(
         self,
         session_id: str

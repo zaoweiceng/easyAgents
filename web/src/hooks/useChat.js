@@ -5,7 +5,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { flushSync } from 'react-dom';
-import { chatSync, chatStream, chatStreamResume } from '../services/api';
+import { chatSync, chatStream, chatStreamResume, deleteMessage as deleteMessageApi } from '../services/api';
 
 // 辅助函数：从JSON对象中提取agent名称
 function extractAgentName(jsonObj) {
@@ -636,6 +636,7 @@ export const useChat = (initialSessionId = null, settings = null) => {
         }
 
         return {
+          id: msg.id,  // 保留数据库 ID，用于删除操作
           role: msg.role,
           content: content,
           data: msgData,
@@ -661,6 +662,34 @@ export const useChat = (initialSessionId = null, settings = null) => {
     setSessionId(newSessionId);
   }, []);
 
+  /**
+   * 删除指定消息
+   */
+  const deleteMessage = useCallback(async (messageIndex) => {
+    const messageToDelete = messages[messageIndex];
+
+    if (!messageToDelete) {
+      console.error('消息不存在:', messageIndex);
+      return false;
+    }
+
+    try {
+      // 如果消息有 id（从数据库加载的），则调用 API 删除
+      if (messageToDelete.id && sessionId) {
+        await deleteMessageApi(sessionId, messageToDelete.id);
+      }
+
+      // 从本地状态中删除消息
+      setMessages((prev) => prev.filter((_, idx) => idx !== messageIndex));
+
+      return true;
+    } catch (error) {
+      console.error('删除消息失败:', error);
+      setError(error.message);
+      return false;
+    }
+  }, [messages, sessionId]);
+
   return {
     messages,
     isLoading,
@@ -674,6 +703,7 @@ export const useChat = (initialSessionId = null, settings = null) => {
     submitFormAndResume,
     clearMessages,
     loadConversation,
+    deleteMessage,
     setSessionId: setSessionIdFromOutside,
   };
 };

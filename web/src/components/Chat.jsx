@@ -2,11 +2,12 @@
  * Chat Component - 聊天界面组件（ChatGPT风格）
  */
 import { useState, useRef, useEffect } from 'react';
-import { Menu, Settings, Send, Bot, Plus, Paperclip, X, Folder } from 'lucide-react';
+import { Menu, Settings, Send, Bot, Plus, Paperclip, X, Folder, Trash2 } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
 import { SettingsModal } from './SettingsModal';
 import { AgentModal } from './AgentModal';
 import { FileManagementModal } from './FileManagementModal';
+import { ConfirmDialog } from './ConfirmDialog';
 import { ThinkingProcess } from './ThinkingProcess';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { uploadFile } from '../services/api';
@@ -27,6 +28,8 @@ export const Chat = ({
   const [showSettings, setShowSettings] = useState(false);
   const [showAgent, setShowAgent] = useState(false);
   const [showFileManagement, setShowFileManagement] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [messageToDelete, setMessageToDelete] = useState(null);
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef(null);
@@ -45,6 +48,7 @@ export const Chat = ({
     submitFormAndResume,
     clearMessages,
     loadConversation,
+    deleteMessage,
     setSessionId,
   } = useChat(currentSessionId, settings);
 
@@ -147,6 +151,30 @@ export const Chat = ({
     }
   };
 
+  // 处理删除消息
+  const handleDeleteMessage = (messageIndex) => {
+    setMessageToDelete(messageIndex);
+    setShowDeleteConfirm(true);
+  };
+
+  // 确认删除消息
+  const handleConfirmDelete = async () => {
+    if (messageToDelete !== null) {
+      const success = await deleteMessage(messageToDelete);
+      if (!success) {
+        // 删除失败时的处理已在 useChat 中通过 error 状态显示
+      }
+    }
+    setShowDeleteConfirm(false);
+    setMessageToDelete(null);
+  };
+
+  // 取消删除
+  const handleCancelDelete = () => {
+    setShowDeleteConfirm(false);
+    setMessageToDelete(null);
+  };
+
   return (
     <div className="chat-container">
       {/* Header */}
@@ -197,6 +225,15 @@ export const Chat = ({
 
             return (
               <div key={index} className={`message message-${msg.role}`}>
+                {/* Delete Button - 悬停时显示 */}
+                <button
+                  className="message-delete-btn"
+                  onClick={() => handleDeleteMessage(index)}
+                  title="删除消息"
+                >
+                  <Trash2 size={16} />
+                </button>
+
                 {/* Thinking Process - 只在assistant消息且有thinkingSteps时显示 */}
                 {msg.role === 'assistant' && msg.thinkingSteps && msg.thinkingSteps.length > 0 && (
                   <ThinkingProcess
@@ -319,6 +356,15 @@ export const Chat = ({
       <FileManagementModal
         isOpen={showFileManagement}
         onClose={() => setShowFileManagement(false)}
+      />
+
+      {/* Delete Message Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title="删除消息"
+        message="确定要删除这条消息吗？此操作不可恢复。"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
       />
     </div>
   );
