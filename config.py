@@ -5,9 +5,24 @@
 """
 
 import os
+import sys
 from typing import Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+def get_app_root():
+    """
+    获取应用根目录
+    兼容开发环境和PyInstaller打包后的环境
+    """
+    if getattr(sys, 'frozen', False):
+        # PyInstaller打包后的环境
+        # sys.executable 指向 easyAgent.exe（在根目录）
+        return os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        # 开发环境
+        # 从 config.py 所在目录就是项目根目录
+        return os.path.dirname(os.path.abspath(__file__))
 
 
 class Settings(BaseSettings):
@@ -134,7 +149,8 @@ class Settings(BaseSettings):
     )
 
     class Config:
-        env_file = ".env"
+        # 使用根目录的.env文件
+        env_file = os.path.join(get_app_root(), ".env")
         env_file_encoding = "utf-8"
         case_sensitive = False
         extra = "ignore"
@@ -148,9 +164,12 @@ class AppConfig:
         初始化配置
 
         Args:
-            env_file: .env文件路径
+            env_file: .env文件路径（可选，默认使用根目录/.env）
         """
-        self.env_file = env_file or ".env"
+        # 默认使用根目录的.env文件
+        if env_file is None:
+            env_file = os.path.join(get_app_root(), ".env")
+        self.env_file = env_file
         self.settings = self._load_settings()
 
     def _load_settings(self) -> Settings:

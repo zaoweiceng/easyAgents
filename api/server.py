@@ -19,8 +19,23 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from typing import Optional
 
+def get_app_root():
+    """
+    获取应用根目录
+    兼容开发环境和PyInstaller打包后的环境
+    """
+    if getattr(sys, 'frozen', False):
+        # PyInstaller打包后的环境
+        # sys.executable 指向 easyAgent.exe（在根目录）
+        return os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        # 开发环境
+        # 从 api/server.py 向上两级到达项目根目录
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # 添加项目根目录到路径
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+app_root = get_app_root()
+sys.path.insert(0, app_root)
 
 from core import AgentManager
 from core.context_manager import context_manager
@@ -1270,8 +1285,8 @@ async def update_model_config(request: Request):
                 detail="base_url和model_name不能为空"
             )
 
-        # 读取.env文件
-        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+        # 读取.env文件（使用根目录）
+        env_path = os.path.join(app_root, ".env")
 
         # 如果.env文件不存在，创建默认的.env文件
         if not os.path.exists(env_path):
@@ -1373,8 +1388,8 @@ async def update_llm_params(request: Request):
         top_k = data.get("top_k")
         stream_chunk_size = data.get("stream_chunk_size")
 
-        # 读取.env文件
-        env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+        # 读取.env文件（使用根目录）
+        env_path = os.path.join(app_root, ".env")
 
         # 如果.env文件不存在，创建默认的.env文件
         if not os.path.exists(env_path):
